@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm'
 export type AppSettingKey = 'software_name'
 
 export const DEFAULT_SETTINGS: Record<AppSettingKey, string> = {
-  software_name: 'LabStock',
+  software_name: 'Labs',
 }
 
 /** Get a setting value by key. Falls back to default if not set. */

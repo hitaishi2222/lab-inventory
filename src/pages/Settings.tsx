@@ -16,7 +16,7 @@ export default function Settings() {
   const { data: settings } = useSettings()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
-  const [softwareName, setSoftwareName] = useState(settings?.software_name || 'LabStock')
+  const [softwareName, setSoftwareName] = useState(settings?.software_name || 'Labs')
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)

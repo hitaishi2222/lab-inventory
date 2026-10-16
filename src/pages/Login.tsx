@@ -45,7 +45,7 @@ export default function Login() {
             <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <FlaskConical className="size-4" />
             </span>
-            <span className="text-base font-semibold">LabStock</span>
+            <span className="text-base font-semibold">Labs</span>
           </div>
           <CardTitle>Welcome back</CardTitle>
           <CardDescription>

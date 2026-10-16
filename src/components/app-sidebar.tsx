@@ -59,7 +59,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <span className="flex size-5 items-center justify-center rounded-md bg-primary text-primary-foreground">
                   <FlaskConical className="size-3.5" />
                 </span>
-                <span className="text-base font-semibold">{me?.softwareName || 'LabStock'}</span>
+                <span className="text-base font-semibold">{me?.softwareName || 'Labs'}</span>
               </NavLink>
             </SidebarMenuButton>
           </SidebarMenuItem>

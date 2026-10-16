@@ -145,7 +145,7 @@ await seedDefaultPermissions()
 console.log('Default role permissions seeded.')
 
 // --- Default software name ---
-await setSetting('software_name', 'LabStock')
+await setSetting('software_name', 'Labs')
 console.log('Default software name seeded.')
 
 console.log('Database seeded successfully!')

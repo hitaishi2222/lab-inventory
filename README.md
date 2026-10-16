@@ -1,4 +1,4 @@
-# LabStock — Lab Inventory Management System
+# Labs — Lab Inventory Management System
 
 A self-hosted inventory management dashboard for a Chemistry/Physics research laboratory. Lab mates log in to check out equipment, log chemical/consumable usage, and track inventory levels. Runs as a Docker container on a home/lab server, exposed via Cloudflare Tunnel.
 

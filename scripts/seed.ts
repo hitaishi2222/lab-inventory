@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../src/server/db/index.ts'
-import { users, categories, items, chemicalDetails, equipmentDetails, appSettings } from '../src/server/db/schema.ts'
+import { users, user as authUser, categories, items, chemicalDetails, equipmentDetails, appSettings } from '../src/server/db/schema.ts'
 import { auth } from '../src/server/auth.ts'
 import { seedDefaultPermissions } from '../src/server/lib/permissions.ts'
 import { setSetting } from '../src/server/lib/settings.ts'
@@ -34,7 +34,7 @@ const ADMIN_EMAIL = 'admin@lab.edu'
 const existingAdmin = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).get()
 if (!existingAdmin) {
   await auth.api.signUpEmail({
-    body: { name: 'Dr. Hitaishi V', email: ADMIN_EMAIL, password: 'admin123' },
+    body: { name: 'Lab Admin', email: ADMIN_EMAIL, username: 'admin', password: 'admin123' },
     // signUpEmail outside a request needs explicit headers object
     headers: new Headers(),
   })
@@ -42,11 +42,24 @@ if (!existingAdmin) {
   // profile row — promote it to ADMIN.
   await db
     .update(users)
-    .set({ name: 'Dr. Hitaishi V', role: 'ADMIN', updatedAt: new Date().toISOString() })
+    .set({ name: 'Lab Admin', role: 'ADMIN', updatedAt: new Date().toISOString() })
     .where(eq(users.email, ADMIN_EMAIL))
   console.log('Admin user created (admin@lab.edu / admin123).')
 } else {
   console.log('Admin user already exists, skipping.')
+}
+
+// Backfill: accounts created before usernames existed get one if it is free.
+// (Requires `npm run db:migrate` first so the `username` column exists.)
+const adminIdentity = await db.select().from(authUser).where(eq(authUser.email, ADMIN_EMAIL)).get()
+if (adminIdentity && !adminIdentity.username) {
+  const taken = await db.select().from(authUser).where(eq(authUser.username, 'admin')).get()
+  if (!taken) {
+    await db.update(authUser).set({ username: 'admin' }).where(eq(authUser.email, ADMIN_EMAIL))
+    console.log("Admin username set to 'admin' (also works for login).")
+  } else {
+    console.log("Username 'admin' is taken — set the admin username in Settings.")
+  }
 }
 
 // --- Sample items ------------------------------------------------------------

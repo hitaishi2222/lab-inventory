@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import { BoxesIcon, TriangleAlertIcon, MicroscopeIcon, FlaskConicalIcon } from 'lucide-react'
 import { useItems } from '@/hooks/queries'
+import { useDateTime } from '@/lib/date-format'
+import { ActivityCharts } from '@/components/activity-charts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
@@ -31,13 +33,14 @@ function StatCard({
 
 export default function Dashboard() {
   const { data, isPending, isError } = useItems({ limit: 500 })
+  const { formatDate } = useDateTime()
 
   if (isPending) return <p className="text-sm text-muted-foreground">Loading dashboard…</p>
   if (isError) return <p className="text-sm text-destructive">Failed to load dashboard.</p>
 
   const items = data.items
 
-  const lowStock = items.filter((i) => i.quantity <= i.minStockThreshold)
+  const lowStock = items.filter((i) => !i.equipment && i.quantity <= i.minStockThreshold)
   const checkedOut = items.filter((i) => i.equipment?.status === 'CHECKED_OUT')
   const now = new Date()
   const soon = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000)
@@ -69,6 +72,8 @@ export default function Dashboard() {
           hint={expiring.length ? 'Check chemical safety' : 'Nothing expiring soon'}
         />
       </div>
+
+      <ActivityCharts />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -131,7 +136,7 @@ export default function Dashboard() {
                     {i.name}
                   </Link>
                   <span className="ml-auto text-muted-foreground">
-                    Expires {i.chemical?.expiryDate}
+                    Expires {i.chemical?.expiryDate ? formatDate(i.chemical.expiryDate) : '—'}
                   </span>
                 </li>
               ))}

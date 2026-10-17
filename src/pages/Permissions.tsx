@@ -29,6 +29,7 @@ const PERMISSION_LABELS: Record<Permission, string> = {
   'export:data': 'Export data',
   'permissions:manage': 'Manage role permissions',
   'settings:manage': 'Manage settings',
+  'labs:manage': 'Create and manage labs',
 }
 
 const ROLE_LABELS: Record<string, string> = {

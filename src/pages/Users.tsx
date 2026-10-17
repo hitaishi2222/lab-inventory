@@ -70,9 +70,21 @@ export default function Users() {
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [newEmail, setNewEmail] = useState('')
+  const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newRole, setNewRole] = useState<Role>('OTHERS')
   const [error, setError] = useState<string | null>(null)
+
+  // Suggest a username from the email prefix; the admin can still edit it.
+  function handleEmailChange(email: string) {
+    setNewEmail(email)
+    const prefix = email
+      .split('@')[0]
+      .toLowerCase()
+      .replace(/[^a-z0-9_.]/g, '')
+      .slice(0, 30)
+    setNewUsername(prefix.length >= 3 ? prefix : '')
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -81,12 +93,14 @@ export default function Users() {
       await createUser.mutateAsync({
         name: newName,
         email: newEmail,
+        username: newUsername.trim().toLowerCase() || undefined,
         password: newPassword,
         role: newRole,
       })
       setCreateOpen(false)
       setNewName('')
       setNewEmail('')
+      setNewUsername('')
       setNewPassword('')
       setNewRole('OTHERS')
     } catch (err) {
@@ -133,6 +147,7 @@ export default function Users() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Username</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
@@ -142,6 +157,7 @@ export default function Users() {
                 <TableRow key={u.id}>
                   <TableCell className="font-medium">{u.name}</TableCell>
                   <TableCell>{u.email}</TableCell>
+                  <TableCell>{u.username ?? <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell>
                     {u.id === me?.id ? (
                       <Badge>{u.role} (you)</Badge>
@@ -229,10 +245,26 @@ export default function Users() {
                 id="create-user-email"
                 type="email"
                 value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
+                onChange={(e) => handleEmailChange(e.target.value)}
                 required
                 autoComplete="email"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-user-username">Username</Label>
+              <Input
+                id="create-user-username"
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
+                minLength={3}
+                maxLength={30}
+                autoComplete="username"
+                placeholder="auto-suggested from email"
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional. 3–30 characters, letters, numbers, dots, underscores.
+                The user can sign in with it and change it later in Settings.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="create-user-password">Password *</Label>

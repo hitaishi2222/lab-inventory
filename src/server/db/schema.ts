@@ -13,6 +13,10 @@ export const user = sqliteTable('user', {
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
   emailVerified: integer('email_verified', { mode: 'boolean' }).notNull(),
+  // Login handle for username sign-in (better-auth `username` plugin).
+  // Null for accounts created before usernames existed — those users keep
+  // signing in with email until they set a username in Settings.
+  username: text('username').unique(),
   image: text('image'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
@@ -133,6 +137,18 @@ export const equipmentCheckouts = sqliteTable('equipment_checkouts', {
   returnedAt: text('returned_at'),
   notes: text('notes'),
   status: text('status', { enum: ['ACTIVE', 'RETURNED', 'OVERDUE'] }).notNull().default('ACTIVE'),
+})
+
+export const equipmentReservations = sqliteTable('equipment_reservations', {
+  id: text('id').primaryKey(),
+  itemId: text('item_id').references(() => items.id).notNull(),
+  userId: text('user_id').references(() => users.id).notNull(),
+  // ISO datetimes (UTC). A reservation occupies [startsAt, endsAt).
+  startsAt: text('starts_at').notNull(),
+  endsAt: text('ends_at').notNull(),
+  notes: text('notes'),
+  status: text('status', { enum: ['UPCOMING', 'CANCELLED'] }).notNull().default('UPCOMING'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 })
 
 export const usageLogs = sqliteTable('usage_logs', {

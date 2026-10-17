@@ -3,6 +3,7 @@ import { useNotifications, useMarkRead, useMarkAllRead } from '@/hooks/queries'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { useDateTime } from '@/lib/date-format'
 
 const TYPE_LABEL: Record<string, string> = {
   LOW_STOCK: 'Low stock',
@@ -16,6 +17,7 @@ export default function Notifications() {
   const markAllRead = useMarkAllRead()
 
   const unread = (data || []).filter((n) => !n.read).length
+  const { formatDateTime } = useDateTime()
 
   return (
     <div className="max-w-3xl space-y-4">
@@ -51,7 +53,7 @@ export default function Notifications() {
                 <p className="text-sm font-medium">{n.title}</p>
                 <p className="text-sm text-muted-foreground">{n.message}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {new Date(n.createdAt).toLocaleString()}
+                  {formatDateTime(n.createdAt)}
                   {n.link && (
                     <>
                       {' · '}

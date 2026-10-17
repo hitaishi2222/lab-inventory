@@ -6,3 +6,7 @@ backups
 *.local
 .pi/
 screenshots/
+.repowise/
+
+# repowise owner-digest key (local)
+.repowise/events.key

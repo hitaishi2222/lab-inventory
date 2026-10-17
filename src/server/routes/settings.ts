@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { requireAuth, requirePermission } from '../middleware/auth'
-import { getAllSettings, setSetting, type AppSettingKey } from '../lib/settings'
+import { getAllSettings, setSetting, SETTING_ALLOWED_VALUES, type AppSettingKey } from '../lib/settings'
 
 export const settingsRouter = new Hono()
 
@@ -25,8 +25,13 @@ settingsRouter.put('/:key', requireAuth, requirePermission('settings:manage'), a
   const parsed = schema.safeParse(body)
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400)
 
+  const allowed = SETTING_ALLOWED_VALUES[key]
+  if (allowed && !allowed.includes(parsed.data.value)) {
+    return c.json({ error: `Invalid value. Allowed: ${allowed.join(', ')}` }, 400)
+  }
+
   await setSetting(key, parsed.data.value)
   return c.json({ message: 'Setting updated', key, value: parsed.data.value })
 })
 
-const DEFAULT_SETTINGS_KEYS: AppSettingKey[] = ['software_name']
+const DEFAULT_SETTINGS_KEYS: AppSettingKey[] = ['software_name', 'date_format', 'time_format']

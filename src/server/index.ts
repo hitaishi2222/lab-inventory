@@ -4,7 +4,9 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { readFile } from 'node:fs/promises'
 import { auth } from './auth'
-import { db } from './db'
+import { db, labStorage, runWithLab, allLabIds } from './db'
+import { LABS } from './db/labs'
+import { seedDefaultPermissions } from './lib/permissions'
 import { users } from './db/schema'
 import { eq } from 'drizzle-orm'
 import { itemsRouter } from './routes/items'
@@ -14,13 +16,79 @@ import { notificationsRouter } from './routes/notifications'
 import { auditRouter } from './routes/audit'
 import { categoriesRouter } from './routes/categories'
 import { usersRouter } from './routes/users'
+import { dashboardRouter } from './routes/dashboard'
 import { rolePermissionsRouter } from './routes/role-permissions'
 import { settingsRouter } from './routes/settings'
 import { exportRouter } from './routes/export'
+import { labsRouter } from './routes/labs'
 
 const app = new Hono()
 
-app.use('*', cors())
+// CORS must allow credentials: better-auth authenticates via httpOnly
+// cookies, and browsers reject `Access-Control-Allow-Origin: *` on any
+// credentialed request (login would "succeed" but the session cookie is
+// never stored, bouncing the user back to /login). In prod the frontend is
+// served same-origin from this server, so the list only matters for dev
+// (:5173 -> :3000) and any trusted cross-origin frontends.
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.BETTER_AUTH_URL,
+  process.env.FRONTEND_URL,
+  ...(process.env.TRUSTED_ORIGINS?.split(',').map((o) => o.trim()) ?? []),
+].filter((o): o is string => Boolean(o))
+
+app.use(
+  '*',
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+    allowMethods: ['GET', 'HEAD', 'PUT', 'POST', 'DELETE', 'PATCH'],
+    allowHeaders: ['Content-Type', 'Authorization', 'x-lab-id'],
+    maxAge: 86400,
+  }),
+)
+
+// ---- Multi-lab resolution ---------------------------------------------
+// One instance can serve two (or more) fully separate labs, each with its
+// own database file. The active lab travels with the request as the
+// `x-lab-id` header (sent by the frontend from the login-page selector),
+// falling back to the `lab` query param and then the `lab_id` cookie so
+// better-auth's own fetch calls (which can't set custom headers) still
+// land in the right lab. Unknown/missing values fall back to the default
+// lab, so single-lab deployments behave exactly as before.
+function resolveLabId(req: Request): string {
+  const header = req.headers.get('x-lab-id')?.trim()
+  if (header && LABS.some((l) => l.id === header)) return header
+  try {
+    const url = new URL(req.url)
+    const query = url.searchParams.get('lab')?.trim()
+    if (query && LABS.some((l) => l.id === query)) return query
+  } catch {
+    /* ignore malformed URL */
+  }
+  const cookie = req.headers.get('cookie')
+  if (cookie) {
+    for (const part of cookie.split(';')) {
+      const [k, ...rest] = part.trim().split('=')
+      if (k === 'lab_id') {
+        const value = decodeURIComponent(rest.join('=').trim())
+        if (value && LABS.some((l) => l.id === value)) return value
+      }
+    }
+  }
+  return LABS[0].id
+}
+
+app.use('*', async (c, next) => {
+  const labId = resolveLabId(c.req.raw)
+  await labStorage.run(labId, () => next())
+  // Echo the resolved lab back as a cookie so better-auth requests
+  // (plain cookie fetches without the custom header) stay in sync.
+  // Appended, never replacing: auth responses already carry their own
+  // Set-Cookie (session) which must survive.
+  c.header('Set-Cookie', `lab_id=${encodeURIComponent(labId)}; Path=/; Max-Age=31536000; SameSite=Lax`, { append: true })
+})
 
 // Auth routes (better-auth handles its own sub-paths like /sign-in/email).
 // NOTE: mounted with app.use, not app.on — Hono's RegExpRouter drops
@@ -53,9 +121,11 @@ app.route('/api/notifications', notificationsRouter)
 app.route('/api/audit', auditRouter)
 app.route('/api/categories', categoriesRouter)
 app.route('/api/users', usersRouter)
+app.route('/api/dashboard', dashboardRouter)
 app.route('/api/role-permissions', rolePermissionsRouter)
 app.route('/api/settings', settingsRouter)
 app.route('/api/export', exportRouter)
+app.route('/api/labs', labsRouter)
 
 // Serve the Vite production build (./dist) when it exists.
 // In dev this directory usually doesn't exist — the Vite dev server
@@ -78,6 +148,15 @@ app.get('*', async (c) => {
     )
   }
 })
+
+// Ensure every lab has the current default permissions (idempotent,
+// adds only missing rows). This is what grants existing ADMINs newly
+// introduced permissions such as `labs:manage` after an update.
+for (const labId of allLabIds()) {
+  await runWithLab(labId, () => seedDefaultPermissions()).catch((err) =>
+    console.warn(`Permission ensure failed [lab: ${labId}]:`, err),
+  )
+}
 
 const port = Number(process.env.PORT || 3000)
 

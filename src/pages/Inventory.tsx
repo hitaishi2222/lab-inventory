@@ -28,6 +28,9 @@ export function categoryNameOf(item: Item, lookup: Map<string, string>) {
 }
 
 export function stockBadge(item: Item) {
+  // Equipment is tracked by availability (Available / Checked out), never by
+  // stock level — a quantity/threshold badge is meaningless for it.
+  if (item.equipment) return null
   if (item.quantity <= 0) return <Badge variant="destructive">Out of stock</Badge>
   if (item.quantity <= item.minStockThreshold) return <Badge variant="destructive">Low stock</Badge>
   return <Badge variant="secondary">In stock</Badge>

@@ -33,6 +33,7 @@ export type Permission =
   | 'export:data'
   | 'permissions:manage'
   | 'settings:manage'
+  | 'labs:manage'
 
 export interface Me {
   id: string
@@ -41,12 +42,14 @@ export interface Me {
   role: Role
   permissions: Permission[]
   softwareName: string
+  dateFormat: string
+  timeFormat: string
 }
 
 export function useMe() {
   return useQuery({
     queryKey: ['me'],
-    queryFn: () => api<{ user: Me }>('/api/users/me').then((r) => r.user),
+    queryFn: () => api<Me>('/api/users/me'),
     staleTime: 60_000,
     retry: false,
   })

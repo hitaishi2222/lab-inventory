@@ -1,5 +1,6 @@
-import { Navigate } from 'react-router-dom'
-import { useSession } from '@/lib/auth-client'
+import { useEffect } from 'react'
+import { Navigate, useNavigate } from 'react-router-dom'
+import { authClient, useSession } from '@/lib/auth-client'
 import { useMe, canAll, type Permission } from '@/lib/use-me'
 
 export function RequireAuth({
@@ -10,7 +11,19 @@ export function RequireAuth({
   permissions?: Permission[]
 }) {
   const { data: session, isPending: sessionPending } = useSession()
+  const navigate = useNavigate()
   const me = useMe()
+
+  const profileFailed = !sessionPending && !me.isPending && (me.isError || !me.data)
+
+  useEffect(() => {
+    if (profileFailed) {
+      // Session cookie exists but the app profile is gone (e.g. account
+      // deleted) or unreachable: clear the stale cookie and bounce to
+      // /login instead of hanging on a "Signing out…" screen.
+      authClient.signOut().finally(() => navigate('/login', { replace: true }))
+    }
+  }, [profileFailed, navigate])
 
   if (sessionPending) {
     return (
@@ -34,9 +47,8 @@ export function RequireAuth({
 
   if (me.isError || !me.data) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-2 text-sm">
-        <p className="text-muted-foreground">Could not load your profile. Try signing in again.</p>
-        <a href="/login" className="underline">Back to login</a>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 text-sm">
+        <p className="text-muted-foreground">Could not load your profile. Redirecting to sign in…</p>
       </div>
     )
   }

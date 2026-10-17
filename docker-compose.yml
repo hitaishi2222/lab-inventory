@@ -7,8 +7,17 @@ services:
       - "3000:3000"
     environment:
       - DATABASE_URL=file:/app/data/lab.db
-      - BETTER_AUTH_URL=https://labs.hitaishiv.com
+      # --- Two-lab mode (optional) ---
+      # Uncomment the 4 lines below to run two fully separate labs in this
+      # one instance. Each lab gets its own database file; a lab selector
+      # appears at the bottom of the login page. Leave commented for the
+      # default single-lab setup (selector stays hidden).
+      # - LAB2_DATABASE_URL=file:/app/data/lab2.db
+      # - LAB1_NAME=${LAB1_NAME:-Lab 1}
+      # - LAB2_NAME=${LAB2_NAME:-Lab 2}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-https://labs.example.com}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - TRUSTED_ORIGINS=${TRUSTED_ORIGINS:-}
     volumes:
       - ./data:/app/data
       - ./backups:/app/backups
@@ -21,5 +30,5 @@ services:
       - ./backups:/backups
     command: >
       sh -c "apk add --no-cache sqlite &&
-             echo '0 2 * * * sqlite3 /data/lab.db \".backup /backups/backup_$$(date +\%Y\%m\%d_\%H\%M\%S).db\"' | crontab - && cron -f"
+             echo '0 2 * * * for f in /data/*.db; do n=$$(basename $$f .db); sqlite3 $$f \".backup /backups/backup_$${n}_$$(date +\%Y\%m\%d_\%H\%M\%S).db\"; done' | crontab - && cron -f"
     restart: unless-stopped

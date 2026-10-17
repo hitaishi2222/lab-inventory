@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAudit } from '@/hooks/queries'
 import { useMe, can } from '@/lib/use-me'
+import { useDateTime } from '@/lib/date-format'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ExportButton } from '@/components/export-button'
@@ -15,11 +16,61 @@ import {
 
 const PAGE_SIZE = 50
 
+const DETAIL_LABELS: Record<string, string> = {
+  email: 'Email',
+  name: 'Name',
+  role: 'Role',
+  status: 'Status',
+  notes: 'Notes',
+  itemId: 'Item',
+  itemName: 'Item',
+  quantityUsed: 'Qty used',
+  expectedReturnAt: 'Expected return',
+  createdBy: 'Created by',
+}
+
+function prettyKey(key: string) {
+  return (
+    DETAIL_LABELS[key] ??
+    key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase())
+  )
+}
+
+function prettyValue(value: unknown) {
+  if (typeof value !== 'string') return String(value)
+  // UUIDs (item ids) are unreadable in full — shorten, full value on hover.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+    return `${value.slice(0, 8)}…`
+  }
+  return value
+}
+
+/** Turn the stored JSON details blob into readable key/value rows. */
+function parseDetails(details: string | null): { key: string; value: string; full: string }[] | null {
+  if (!details) return null
+  try {
+    const obj = JSON.parse(details) as unknown
+    if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
+      return [{ key: '', value: details, full: details }]
+    }
+    const entries = Object.entries(obj as Record<string, unknown>)
+    if (entries.length === 0) return null
+    return entries.map(([k, v]) => ({
+      key: prettyKey(k),
+      value: prettyValue(v),
+      full: typeof v === 'string' ? v : JSON.stringify(v),
+    }))
+  } catch {
+    return [{ key: '', value: details, full: details }]
+  }
+}
+
 export default function Audit() {
   const [page, setPage] = useState(1)
   const { data, isPending, isError } = useAudit(page, PAGE_SIZE)
   const totalPages = Math.max(1, Math.ceil((data?.total || 0) / PAGE_SIZE))
   const { data: me } = useMe()
+  const { formatDateTime } = useDateTime()
   const canExport = can(me, 'export:data')
 
   return (
@@ -49,7 +100,7 @@ export default function Audit() {
                 {data.logs.map((l) => (
                   <TableRow key={l.id}>
                     <TableCell className="whitespace-nowrap">
-                      {new Date(l.timestamp).toLocaleString()}
+                      {formatDateTime(l.timestamp)}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{l.action}</Badge>
@@ -57,8 +108,21 @@ export default function Audit() {
                     <TableCell className="whitespace-nowrap">
                       {l.entityType} · <span className="font-mono text-xs">{l.entityId.slice(0, 8)}</span>
                     </TableCell>
-                    <TableCell className="max-w-md truncate text-muted-foreground">
-                      {l.details || '—'}
+                    <TableCell className="max-w-md text-muted-foreground">
+                      {(() => {
+                        const rows = parseDetails(l.details)
+                        if (!rows) return '—'
+                        return (
+                          <div className="space-y-0.5">
+                            {rows.map((r, i) => (
+                              <div key={i} className="text-xs leading-relaxed break-words">
+                                {r.key && <span className="font-medium text-foreground">{r.key}: </span>}
+                                <span title={r.full}>{r.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })()}
                     </TableCell>
                   </TableRow>
                 ))}

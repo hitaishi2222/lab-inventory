@@ -12,11 +12,21 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
-    ...init,
-  })
+  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> | undefined) }
+  // Multi-lab: carry the login-page lab selection so the request lands in
+  // the right lab database. Absent in single-lab mode (no-op server-side).
+  try {
+    const labId = localStorage.getItem('selectedLabId')
+    if (labId && !headers['x-lab-id']) headers['x-lab-id'] = labId
+  } catch {
+    /* storage unavailable — server falls back to the default lab */
+  }
+  // Only send Content-Type when there is a body: a JSON content type on
+  // bodyless GETs forces a needless CORS preflight in dev.
+  if (init?.body !== undefined && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
+  const res = await fetch(path, { credentials: 'include', ...init, headers })
   if (res.status === 204) return undefined as T
   const text = await res.text()
   const data = text ? (JSON.parse(text) as unknown) : undefined

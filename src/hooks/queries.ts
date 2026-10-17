@@ -96,6 +96,7 @@ export interface AppUser {
   id: string
   name: string
   email: string
+  username: string | null
   role: Role
   createdAt: string
 }
@@ -191,6 +192,18 @@ export function useDeleteItem() {
   const invalidate = useInvalidateItems()
   return useMutation({
     mutationFn: (id: string) => api(`/api/items/${id}`, { method: 'DELETE' }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useRestock() {
+  const invalidate = useInvalidateItems()
+  return useMutation({
+    mutationFn: ({ id, quantity, notes }: { id: string; quantity: number; notes?: string }) =>
+      api<{ newQuantity: number }>(`/api/items/${id}/restock`, {
+        method: 'POST',
+        body: JSON.stringify({ quantity, notes }),
+      }),
     onSuccess: invalidate,
   })
 }
@@ -339,6 +352,7 @@ export function useCreateUser() {
       name: string
       email: string
       password: string
+      username?: string
       role: AppUser['role']
     }) =>
       api('/api/users', {
@@ -346,6 +360,86 @@ export function useCreateUser() {
         body: JSON.stringify(body),
       }),
     onSuccess: invalidate,
+  })
+}
+
+// --- Dashboard activity charts -------------------------------------------------
+
+export type ActivityRange = '7d' | '30d' | '90d' | '12m'
+
+export interface ActivitySeries {
+  itemId: string
+  name: string
+  value: number
+}
+
+export interface ActivityStats {
+  range: ActivityRange
+  buckets: { key: string; label: string }[]
+  usage: { total: number; top: ActivitySeries[]; columns: number[][] }
+  checkouts: { total: number; top: ActivitySeries[]; columns: number[][] }
+}
+
+export function useActivity(range: ActivityRange) {
+  return useQuery({
+    queryKey: ['dashboard', 'activity', range],
+    queryFn: () => api<ActivityStats>(`/api/dashboard/activity?range=${range}`),
+    staleTime: 60_000,
+  })
+}
+
+// --- Reservations (equipment scheduling) ------------------------------------------
+
+export interface Reservation {
+  id: string
+  itemId?: string
+  itemName?: string
+  userId: string
+  userName: string
+  startsAt: string
+  endsAt: string
+  notes: string | null
+}
+
+export function useReservations(itemId: string | undefined) {
+  return useQuery({
+    queryKey: ['reservations', itemId],
+    queryFn: () =>
+      api<{ reservations: Reservation[] }>(`/api/equipment/${itemId}/reservations`).then((r) => r.reservations),
+    enabled: !!itemId,
+  })
+}
+
+export function useUpcomingReservations() {
+  return useQuery({
+    queryKey: ['reservations', 'upcoming'],
+    queryFn: () =>
+      api<{ reservations: Reservation[] }>('/api/equipment/reservations/upcoming').then((r) => r.reservations),
+    staleTime: 30_000,
+  })
+}
+
+export function useCreateReservation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, startsAt, endsAt, notes }: { id: string; startsAt: string; endsAt: string; notes?: string }) =>
+      api<{ id: string }>(`/api/equipment/${id}/reservations`, {
+        method: 'POST',
+        body: JSON.stringify({ startsAt, endsAt, notes }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reservations'] })
+    },
+  })
+}
+
+export function useCancelReservation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (resId: string) => api(`/api/equipment/reservations/${resId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reservations'] })
+    },
   })
 }
 

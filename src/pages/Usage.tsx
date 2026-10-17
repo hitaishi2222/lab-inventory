@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useItems, useCategories, useUsage, useLogUsage } from '@/hooks/queries'
+import { useItems, useUsage, useLogUsage } from '@/hooks/queries'
 import { useMe, can } from '@/lib/use-me'
+import { useDateTime } from '@/lib/date-format'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -25,9 +26,9 @@ import {
 } from '@/components/ui/table'
 
 export default function Usage() {
-  const { data: categories } = useCategories()
   const { data: itemsData } = useItems({ limit: 200 })
   const { data: me } = useMe()
+  const { formatDateTime } = useDateTime()
   const canExport = can(me, 'export:data')
   const [itemId, setItemId] = useState('')
   const [quantityUsed, setQuantityUsed] = useState('')
@@ -40,8 +41,7 @@ export default function Usage() {
     itemId: filterItemId === 'all' ? undefined : filterItemId,
   })
 
-  const equipmentCategoryId = (categories || []).find((c) => c.name === 'Equipment')?.id
-  const usable = (itemsData?.items || []).filter((i) => i.categoryId !== equipmentCategoryId)
+  const usable = (itemsData?.items || []).filter((i) => !i.equipment)
   const itemLookup = new Map((itemsData?.items || []).map((i) => [i.id, i]))
   const selected = itemLookup.get(itemId)
 
@@ -160,7 +160,7 @@ export default function Usage() {
                       <TableCell className="text-right tabular-nums">
                         {l.quantityUsed} {item?.unit || ''}
                       </TableCell>
-                      <TableCell>{new Date(l.usedAt).toLocaleString()}</TableCell>
+                      <TableCell>{formatDateTime(l.usedAt)}</TableCell>
                       <TableCell>{l.notes || '—'}</TableCell>
                     </TableRow>
                   )

@@ -34,6 +34,7 @@ export type Permission =
   | 'export:data'
   | 'permissions:manage'
   | 'settings:manage'
+  | 'labs:manage'
 
 export const ALL_PERMISSIONS: Permission[] = [
   'inventory:view',
@@ -50,6 +51,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'export:data',
   'permissions:manage',
   'settings:manage',
+  'labs:manage',
 ]
 
 // Default permission sets assigned when the system is first seeded.

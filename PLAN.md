@@ -2,7 +2,7 @@
 
 ## Overview
 
-A self-hosted inventory management dashboard for a Chemistry/Physics research laboratory. Lab mates log in to check out equipment, log chemical/consumable usage, and track inventory levels. The system runs as a Docker container on a home/lab server, exposed via Cloudflare Tunnel at `labs.hitaishiv.com`.
+A self-hosted inventory management dashboard for a Chemistry/Physics research laboratory. Lab mates log in to check out equipment, log chemical/consumable usage, and track inventory levels. The system runs as a Docker container on a home/lab server, exposed via Cloudflare Tunnel at `labs.example.com`.
 
 ---
 
@@ -77,7 +77,7 @@ A self-hosted inventory management dashboard for a Chemistry/Physics research la
 ```
 ┌─────────────────────────────────────────────────────┐
 │                     Browser                          │
-│              labs.hitaishiv.com                      │
+│              labs.example.com                      │
 └──────────────────────┬──────────────────────────────┘
                        │ HTTPS
 ┌──────────────────────▼──────────────────────────────┐
@@ -384,7 +384,7 @@ services:
       - "3000:3000"
     environment:
       - DATABASE_URL=file:/data/lab.db
-      - BETTER_AUTH_URL=https://labs.hitaishiv.com
+      - BETTER_AUTH_URL=https://labs.example.com
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
     volumes:
       - ./data:/data
@@ -555,7 +555,7 @@ labs/
 - [ ] Seed data for testing
 - [ ] Production build optimization
 - [ ] Cloudflare Tunnel setup
-- [ ] Go-live at labs.hitaishiv.com
+- [ ] Go-live at labs.example.com
 
 ---
 
@@ -564,7 +564,7 @@ labs/
 ```env
 # .env
 DATABASE_URL=file:/data/lab.db
-BETTER_AUTH_URL=https://labs.hitaishiv.com
+BETTER_AUTH_URL=https://labs.example.com
 BETTER_AUTH_SECRET=<generate-with-openssl-rand-base64-32>
 ```
 

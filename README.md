@@ -65,6 +65,48 @@ docker-compose up -d
 
 The app runs on port 3000. Expose it via Cloudflare Tunnel pointing to `http://localhost:3000`.
 
+### Labs: create and manage them from the UI
+
+Open **Administration → Labs** (Admin only) to see every lab in the instance and create new ones with the **New lab** form — no restart, no config files. Each lab is a fully separate database file (own users, inventory, audit log, settings) stored next to the main database (`labs.json` registry + one `.db` file per lab).
+
+- Your Admin account is copied into the new lab automatically — sign in there with the same password.
+- After creating, press **Switch** (or log out): pick the new lab on the login page and sign in.
+- The login-page lab selector lists every lab, including ones created here.
+- New labs start with default categories, permissions and the lab name as software name — no sample items.
+- Permission `labs:manage` (Admins have it; it can be delegated via the Permissions page).
+
+Env-var labs (`LAB2_DATABASE_URL` / `LAB_DATABASES`) keep working exactly as before and appear in the same list.
+
+### Two separate labs in one instance via config (optional)
+
+One deployment can serve **two fully separate labs** (e.g. Photonics + Quantum), each with its own isolated database file — own users, inventory, equipment, audit log and settings. Nothing inside the app changes; a lab selector appears at the bottom of the login page only when a second lab is configured, otherwise it stays hidden.
+
+```bash
+# .env
+DATABASE_URL=file:./data/lab1.db
+LAB2_DATABASE_URL=file:./data/lab2.db
+LAB1_NAME=Photonics Lab
+LAB2_NAME=Quantum Lab
+
+npm run db:migrate                 # migrates both database files
+npm run db:seed                    # seeds lab 1 (admin@lab.edu / admin123)
+SEED_LAB=lab-2 npm run db:seed     # seeds lab 2 (same admin credentials)
+```
+
+The Admin/Supervisor reuses the same email + password in both labs and picks the lab on the login page. Users, inventory and history never cross between labs. Switching labs after login = log out, pick the other lab, log in. Daily backups cover both `*.db` files automatically.
+
+### Usernames (email or username login)
+
+Every account can have a **username** in addition to its email. The login page accepts either — type your email or your username plus the same password. Usernames are lowercase, 3–30 characters, letters/numbers/dots/underscores, and unique per lab.
+
+- **Users** set/change their own username in **Settings → Username** (existing accounts keep working with email until they set one).
+- **Admin/Supervisor** can assign one when creating an account in **Users → Create User** (auto-suggested from the email, editable), and see everyone's username in the users table.
+- After `npm run db:migrate`, the seeded admin gets username `admin` automatically (login: `admin` / `admin@lab.edu`, password `admin123`).
+
+### Changing your name and email (Settings → Profile)
+
+Any user, including the Lab Admin, can update their own **name** and **email** from Settings → Profile — no need to touch the database. Name changes save directly; email changes ask for the current password first and must be unique. You stay signed in (sessions are tied to the account, not the address), other devices are signed out on an email change, and the change is recorded in the audit log.
+
 ### Database Backups
 
 The `docker-compose.yml` includes a `backup` service that runs a daily SQLite `.backup` cron job to `./backups/`.

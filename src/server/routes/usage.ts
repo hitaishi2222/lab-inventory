@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { eq, desc, sql } from 'drizzle-orm'
 import { db } from '../db'
-import { usageLogs, items } from '../db/schema'
+import { usageLogs, items, equipmentDetails } from '../db/schema'
 import { requireAuth, requirePermission } from '../middleware/auth'
 import { logAudit } from '../lib/audit'
 import { createNotification } from '../lib/notifications'
@@ -30,6 +30,14 @@ usageRouter.post(
   const item = await db.select().from(items).where(eq(items.id, parsed.data.itemId)).get()
   if (!item) return c.json({ error: 'Item not found' }, 404)
 
+  // Equipment is tracked by checkout/return, not by consumable quantity —
+  // logging usage here would corrupt availability and fire bogus low-stock
+  // alerts for expensive one-off instruments.
+  const isEquipment = await db.select({ id: equipmentDetails.id }).from(equipmentDetails).where(eq(equipmentDetails.itemId, item.id)).get()
+  if (isEquipment) {
+    return c.json({ error: 'Cannot log consumable usage for equipment. Use check-out / return instead.' }, 400)
+  }
+
   const newQty = item.quantity - parsed.data.quantityUsed
   await db.update(items).set({ quantity: newQty, updatedAt: sql`(datetime('now'))` }).where(eq(items.id, parsed.data.itemId))
 
@@ -51,7 +59,7 @@ usageRouter.post(
     })
   }
 
-  await logAudit({ userId: user.id, action: 'CREATE', entityType: 'UsageLog', entityId: logId, details: parsed.data })
+  await logAudit({ userId: user.id, action: 'CREATE', entityType: 'UsageLog', entityId: logId, details: { ...parsed.data, itemName: item.name, unit: item.unit } })
 
   return c.json({ id: logId, message: 'Usage logged', newQuantity: newQty }, 201)
 })

@@ -9,6 +9,7 @@ import {
   UsersIcon,
   TagsIcon,
   ShieldCheckIcon,
+  Building2Icon,
   SettingsIcon,
   FlaskConical,
 } from 'lucide-react'
@@ -40,6 +41,7 @@ const adminNav = [
   { title: 'Users', url: '/users', icon: UsersIcon },
   { title: 'Categories', url: '/categories', icon: TagsIcon },
   { title: 'Permissions', url: '/permissions', icon: ShieldCheckIcon },
+  { title: 'Labs', url: '/labs', icon: Building2Icon },
 ]
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {

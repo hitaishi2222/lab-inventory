@@ -8,10 +8,15 @@ import {
   useEquipmentHistory,
   useUsage,
   useReturn,
+  useReservations,
 } from '@/hooks/queries'
 import { useMe, can } from '@/lib/use-me'
+import { useDateTime } from '@/lib/date-format'
 import { ItemForm, valuesFromItem, payloadFromValues, type ItemFormValues } from '@/components/item-form'
 import { CheckoutDialog } from '@/components/checkout-dialog'
+import { RestockDialog } from '@/components/restock-dialog'
+import { ReserveDialog } from '@/components/reserve-dialog'
+import { ReservationList } from '@/components/reservation-list'
 import { stockBadge, equipmentBadge, categoryNameOf } from '@/pages/Inventory'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -57,11 +62,14 @@ export default function ItemDetail() {
   const { data: item, isPending, isError } = useItem(id)
   const { data: categories } = useCategories()
   const { data: me } = useMe()
+  const { formatDate, formatDateTime } = useDateTime()
   const updateItem = useUpdateItem()
   const deleteItem = useDeleteItem()
   const returnEquipment = useReturn()
   const [editOpen, setEditOpen] = useState(false)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
+  const [reserveOpen, setReserveOpen] = useState(false)
+  const [restockOpen, setRestockOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
   const categoryName = item && categories
@@ -69,6 +77,7 @@ export default function ItemDetail() {
     : undefined
   const isEquipment = categoryName === 'Equipment'
   const history = useEquipmentHistory(isEquipment ? id : undefined)
+  const reservations = useReservations(isEquipment ? id : undefined)
   const usage = useUsage(isEquipment ? undefined : { itemId: id })
 
   if (isPending) return <p className="text-sm text-muted-foreground">Loading item…</p>
@@ -131,6 +140,9 @@ export default function ItemDetail() {
           {editable && (
             <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>Edit</Button>
           )}
+          {editable && !isEquipment && (
+            <Button size="sm" onClick={() => setRestockOpen(true)}>Add stock</Button>
+          )}
           {canDelete && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -165,7 +177,7 @@ export default function ItemDetail() {
             <Field label="Quantity" value={`${item.quantity} ${item.unit}`} />
             <Field label="Low-stock threshold" value={`${item.minStockThreshold} ${item.unit}`} />
             <Field label="Description" value={item.description} />
-            <Field label="Last updated" value={new Date(item.updatedAt).toLocaleString()} />
+            <Field label="Last updated" value={formatDateTime(item.updatedAt)} />
           </dl>
         </CardContent>
       </Card>
@@ -180,7 +192,7 @@ export default function ItemDetail() {
               <Field label="CAS number" value={item.chemical.casNumber} />
               <Field label="Molecular formula" value={item.chemical.molecularFormula} />
               <Field label="GHS hazard class" value={item.chemical.hazardClass} />
-              <Field label="Expiry date" value={item.chemical.expiryDate} />
+              <Field label="Expiry date" value={item.chemical.expiryDate ? formatDate(item.chemical.expiryDate) : undefined} />
               <Field label="Storage conditions" value={item.chemical.storageConditions} />
               <Field
                 label="SDS"
@@ -213,6 +225,7 @@ export default function ItemDetail() {
       )}
 
       {isEquipment ? (
+        <>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Checkout history</CardTitle>
@@ -234,9 +247,9 @@ export default function ItemDetail() {
                 <TableBody>
                   {history.data.map((h) => (
                     <TableRow key={h.id}>
-                      <TableCell>{new Date(h.checkedOutAt).toLocaleString()}</TableCell>
-                      <TableCell>{h.expectedReturnAt ? new Date(h.expectedReturnAt).toLocaleDateString() : '—'}</TableCell>
-                      <TableCell>{h.returnedAt ? new Date(h.returnedAt).toLocaleString() : '—'}</TableCell>
+                      <TableCell>{formatDateTime(h.checkedOutAt)}</TableCell>
+                      <TableCell>{h.expectedReturnAt ? formatDate(h.expectedReturnAt) : '—'}</TableCell>
+                      <TableCell>{h.returnedAt ? formatDateTime(h.returnedAt) : '—'}</TableCell>
                       <TableCell><Badge variant="outline">{h.status}</Badge></TableCell>
                       <TableCell>{h.notes || '—'}</TableCell>
                     </TableRow>
@@ -246,6 +259,22 @@ export default function ItemDetail() {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">Upcoming bookings</CardTitle>
+            {canCheckout && (
+              <Button size="sm" variant="outline" onClick={() => setReserveOpen(true)}>
+                Reserve
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            <ReservationList reservations={reservations.data} />
+          </CardContent>
+        </Card>
+        <ReserveDialog itemId={itemId} itemName={item.name} open={reserveOpen} onOpenChange={setReserveOpen} />
+        </>
       ) : (
         <Card>
           <CardHeader>
@@ -266,7 +295,7 @@ export default function ItemDetail() {
                 <TableBody>
                   {usage.data.logs.map((l) => (
                     <TableRow key={l.id}>
-                      <TableCell>{new Date(l.usedAt).toLocaleString()}</TableCell>
+                      <TableCell>{formatDateTime(l.usedAt)}</TableCell>
                       <TableCell className="text-right tabular-nums">{l.quantityUsed} {item.unit}</TableCell>
                       <TableCell>{l.notes || '—'}</TableCell>
                     </TableRow>
@@ -296,6 +325,7 @@ export default function ItemDetail() {
         </DialogContent>
       </Dialog>
       <CheckoutDialog itemId={item.id} itemName={item.name} open={checkoutOpen} onOpenChange={setCheckoutOpen} />
+      <RestockDialog itemId={item.id} itemName={item.name} quantity={item.quantity} unit={item.unit} open={restockOpen} onOpenChange={setRestockOpen} />
     </div>
   )
 }

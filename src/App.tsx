@@ -21,6 +21,7 @@ import Settings from './pages/Settings'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import Permissions from './pages/Permissions'
+import Labs from './pages/Labs'
 
 const queryClient = new QueryClient()
 
@@ -53,6 +54,7 @@ function page(
     | 'categories:manage'
     | 'export:data'
     | 'permissions:manage'
+    | 'labs:manage'
   )[]
 ) {
   return (
@@ -99,6 +101,7 @@ function App() {
               path="/permissions"
               element={page('Permissions', <Permissions />, ['permissions:manage'])}
             />
+            <Route path="/labs" element={page('Labs', <Labs />, ['labs:manage'])} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="*" element={<Navigate to="/" replace />} />

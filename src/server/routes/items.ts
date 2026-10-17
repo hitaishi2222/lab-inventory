@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { eq, desc, like, sql } from 'drizzle-orm'
+import { eq, desc, like, sql, inArray } from 'drizzle-orm'
 import { db } from '../db'
 import { items, chemicalDetails, equipmentDetails, equipmentCheckouts, usageLogs } from '../db/schema'
 import { requireAuth, requirePermission } from '../middleware/auth'
@@ -24,7 +24,29 @@ itemsRouter.get('/', requireAuth, async (c) => {
   const total = allItems.length
   const paginated = allItems.slice(offset, offset + parseInt(limit))
 
-  return c.json({ items: paginated, total, page: parseInt(page), limit: parseInt(limit) })
+  // Attach nested details (same shape as GET /api/items/:id). The list is
+  // what Inventory, Dashboard and Equipment render from — without this,
+  // item.equipment / item.chemical are undefined and every equipment-aware
+  // display (availability badges, stock-badge suppression, expiry filter)
+  // silently breaks.
+  const pageIds = paginated.map((i) => i.id)
+  const [chemicals, equipments] = await Promise.all([
+    pageIds.length
+      ? db.select().from(chemicalDetails).where(inArray(chemicalDetails.itemId, pageIds))
+      : [],
+    pageIds.length
+      ? db.select().from(equipmentDetails).where(inArray(equipmentDetails.itemId, pageIds))
+      : [],
+  ])
+  const chemicalByItem = new Map(chemicals.map((cd) => [cd.itemId, cd]))
+  const equipmentByItem = new Map(equipments.map((ed) => [ed.itemId, ed]))
+  const enriched = paginated.map((i) => ({
+    ...i,
+    chemical: chemicalByItem.get(i.id) ?? null,
+    equipment: equipmentByItem.get(i.id) ?? null,
+  }))
+
+  return c.json({ items: enriched, total, page: parseInt(page), limit: parseInt(limit) })
 })
 
 // GET /api/items/:id - Get single item
@@ -143,6 +165,42 @@ itemsRouter.put(
   await logAudit({ userId: user.id, action: 'UPDATE', entityType: 'Item', entityId: id, details: body })
 
   return c.json({ message: 'Item updated' })
+})
+
+// POST /api/items/:id/restock - add to existing stock (chemicals/consumables)
+itemsRouter.post(
+  '/:id/restock',
+  requireAuth,
+  requirePermission('inventory:edit'),
+  async (c) => {
+  const id = c.req.param('id')!
+  const body = await c.req.json()
+  const schema = z.object({
+    quantity: z.number().positive(),
+    notes: z.string().max(500).optional(),
+  })
+  const parsed = schema.safeParse(body)
+  if (!parsed.success) return c.json({ error: 'Quantity must be a positive number.' }, 400)
+
+  const user = c.get('user') as { id: string }
+  const item = await db.select().from(items).where(eq(items.id, id)).get()
+  if (!item) return c.json({ error: 'Not found' }, 404)
+
+  const isEquipment = await db.select({ id: equipmentDetails.id }).from(equipmentDetails).where(eq(equipmentDetails.itemId, id)).get()
+  if (isEquipment) {
+    return c.json({ error: 'Equipment stock is tracked by check-out / return, not restocking.' }, 400)
+  }
+
+  const newQuantity = item.quantity + parsed.data.quantity
+  await db.update(items).set({ quantity: newQuantity, updatedAt: sql`(datetime('now'))` }).where(eq(items.id, id))
+  await logAudit({
+    userId: user.id,
+    action: 'UPDATE',
+    entityType: 'Item',
+    entityId: id,
+    details: { name: item.name, quantityAdded: parsed.data.quantity, unit: item.unit, newQuantity, notes: parsed.data.notes },
+  })
+  return c.json({ message: 'Stock added', newQuantity }, 201)
 })
 
 // DELETE /api/items/:id - Delete item (hard delete + audit)

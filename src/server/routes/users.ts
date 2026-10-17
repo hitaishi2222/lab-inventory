@@ -226,6 +226,8 @@ usersRouter.delete(
   requirePermission('users:manage'),
   async (c) => {
   const id = c.req.param('id')!
+  const me = c.get('user') as { id: string }
+  if (id === me.id) return c.json({ error: 'You cannot delete your own account.' }, 400)
   const target = await db.select().from(users).where(eq(users.id, id)).get()
   if (!target) return c.json({ error: 'User not found' }, 404)
   // Remove the app profile first, then the better-auth identity (its

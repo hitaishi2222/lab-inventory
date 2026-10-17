@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { db } from '../db'
 import { rolePermissions } from '../db/schema'
 import { requireAuth, requireAdmin } from '../middleware/auth'
-import { setRolePermissions, type Role, type Permission } from '../lib/permissions'
+import { setRolePermissions, ROLES, type Role, type Permission } from '../lib/permissions'
 
 export const rolePermissionsRouter = new Hono()
 
@@ -20,7 +20,9 @@ rolePermissionsRouter.get('/', requireAuth, requireAdmin, async (c) => {
 
 // PUT /api/role-permissions/:role - replace permissions for a role
 rolePermissionsRouter.put('/:role', requireAuth, requireAdmin, async (c) => {
-  const role = c.req.param('role') as Role
+  const roleParam = c.req.param('role')
+  if (!ROLES.includes(roleParam as Role)) return c.json({ error: 'Unknown role' }, 400)
+  const role = roleParam as Role
   const body = await c.req.json()
   const schema = z.object({
     permissions: z.array(z.string()),

@@ -33,6 +33,12 @@ notificationsRouter.post(
 // PUT /api/notifications/:id/read
 notificationsRouter.put('/:id/read', requireAuth, async (c) => {
   const id = c.req.param('id')!
+  const me = c.get('user') as { id: string }
+  const existing = await db.select().from(notifications).where(eq(notifications.id, id)).get()
+  if (!existing) return c.json({ error: 'Not found' }, 404)
+  if (existing.userId !== null && existing.userId !== me.id) {
+    return c.json({ error: 'Forbidden' }, 403)
+  }
   await db.update(notifications).set({ read: 1 }).where(eq(notifications.id, id))
   return c.json({ message: 'Marked as read' })
 })

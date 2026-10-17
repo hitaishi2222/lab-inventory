@@ -42,7 +42,14 @@ categoriesRouter.put(
   async (c) => {
   const id = c.req.param('id')!
   const body = await c.req.json()
-  await db.update(categories).set(body).where(eq(categories.id, id))
+  const schema = z.object({
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+  })
+  const parsed = schema.safeParse(body)
+  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400)
+  if (Object.keys(parsed.data).length === 0) return c.json({ error: 'No fields to update' }, 400)
+  await db.update(categories).set(parsed.data).where(eq(categories.id, id))
   return c.json({ message: 'Category updated' })
 })
 

@@ -81,7 +81,7 @@ itemsRouter.post(
       hazardClass: z.string().optional(),
       expiryDate: z.string().optional(),
       storageConditions: z.string().optional(),
-      sdsUrl: z.string().optional(),
+      sdsUrl: z.string().url().refine((u) => /^https?:\/\//i.test(u), 'URL must be http(s)').optional(),
       molecularFormula: z.string().optional(),
     }).optional(),
     equipment: z.object({
@@ -139,11 +139,51 @@ itemsRouter.put(
   const body = await c.req.json()
   const user = c.get('user') as { id: string }
 
-  const { chemical, equipment, ...base } = body
+  const baseSchema = z.object({
+    name: z.string().min(1).optional(),
+    categoryId: z.string().optional(),
+    description: z.string().optional(),
+    location: z.string().optional(),
+    quantity: z.number().optional(),
+    unit: z.string().optional(),
+    minStockThreshold: z.number().optional(),
+    imageUrl: z.string().url().refine((u) => /^https?:\/\//i.test(u), 'URL must be http(s)').optional(),
+  })
+  const chemicalSchema = z.object({
+    casNumber: z.string().optional(),
+    hazardClass: z.string().optional(),
+    expiryDate: z.string().optional(),
+    storageConditions: z.string().optional(),
+    sdsUrl: z.string().url().refine((u) => /^https?:\/\//i.test(u), 'URL must be http(s)').optional(),
+    molecularFormula: z.string().optional(),
+    hazardPictograms: z.string().optional(),
+  }).optional()
+  const equipmentSchema = z.object({
+    serialNumber: z.string().optional(),
+    status: z.enum(['AVAILABLE', 'CHECKED_OUT', 'MAINTENANCE']).optional(),
+    condition: z.string().optional(),
+    purchaseDate: z.string().optional(),
+    warrantyExpiry: z.string().optional(),
+  }).optional()
+
+  const parsed = z.object({
+    chemical: chemicalSchema,
+    equipment: equipmentSchema,
+  }).passthrough().safeParse(body)
+  // Validate base fields separately (strip unknowns).
+  const baseParsed = baseSchema.safeParse(
+    Object.fromEntries(Object.entries(body ?? {}).filter(([k]) => !['chemical', 'equipment'].includes(k))),
+  )
+  if (!baseParsed.success || !parsed.success) {
+    return c.json({ error: (baseParsed.success ? parsed : baseParsed).error?.flatten() }, 400)
+  }
+
+  const base = baseParsed.data
   if (Object.keys(base).length > 0) {
     await db.update(items).set({ ...base, updatedAt: sql`(datetime('now'))` }).where(eq(items.id, id))
   }
 
+  const chemical = parsed.data.chemical
   if (chemical) {
     const existing = await db.select().from(chemicalDetails).where(eq(chemicalDetails.itemId, id)).get()
     if (existing) {
@@ -153,6 +193,7 @@ itemsRouter.put(
     }
   }
 
+  const equipment = parsed.data.equipment
   if (equipment) {
     const existing = await db.select().from(equipmentDetails).where(eq(equipmentDetails.itemId, id)).get()
     if (existing) {

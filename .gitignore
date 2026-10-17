@@ -10,3 +10,8 @@ screenshots/
 
 # repowise owner-digest key (local)
 .repowise/events.key
+
+# local MCP config (absolute paths)
+.mcp.json
+# local databases
+*.db

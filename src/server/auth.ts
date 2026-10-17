@@ -40,13 +40,13 @@ function makeAuth(labId: string) {
       // The reset URL is logged to the server console so an admin
       // can copy-paste it to the user. Configure a real transporter
       // (e.g. nodemailer) here for production email delivery.
-      sendResetPassword: async ({ user, url, token }) => {
+      sendResetPassword: async ({ user, url }) => {
         const sep = '='.repeat(60)
         console.log('\n' + sep)
         console.log(`PASSWORD RESET REQUEST [lab: ${labId}]`)
         console.log(`User: ${user.name} <${user.email}>`)
         console.log(`Reset URL: ${url}`)
-        console.log(`Token: ${token}`)
+        // Do not log the raw token separately; the URL already carries it.
         console.log(sep + '\n')
       },
     },

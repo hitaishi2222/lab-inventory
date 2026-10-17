@@ -8,7 +8,9 @@ export const exportRouter = new Hono()
 
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return ''
-  const s = String(value)
+  let s = String(value)
+  // Mitigate CSV formula injection in spreadsheet apps.
+  if (/^[=+\-@]/.test(s)) s = `'${s}`
   if (s.includes(',') || s.includes('"') || s.includes('\n')) {
     return `"${s.replace(/"/g, '""')}"`
   }

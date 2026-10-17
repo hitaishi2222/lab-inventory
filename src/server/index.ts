@@ -24,6 +24,18 @@ import { labsRouter } from './routes/labs'
 
 const app = new Hono()
 
+// Baseline security headers for every response.
+app.use('*', async (c, next) => {
+  await next()
+  c.header('X-Content-Type-Options', 'nosniff')
+  c.header('X-Frame-Options', 'DENY')
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin')
+  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  if ((process.env.BETTER_AUTH_URL || '').startsWith('https://')) {
+    c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  }
+})
+
 // CORS must allow credentials: better-auth authenticates via httpOnly
 // cookies, and browsers reject `Access-Control-Allow-Origin: *` on any
 // credentialed request (login would "succeed" but the session cookie is
@@ -72,8 +84,12 @@ function resolveLabId(req: Request): string {
     for (const part of cookie.split(';')) {
       const [k, ...rest] = part.trim().split('=')
       if (k === 'lab_id') {
-        const value = decodeURIComponent(rest.join('=').trim())
-        if (value && LABS.some((l) => l.id === value)) return value
+        try {
+          const value = decodeURIComponent(rest.join('=').trim())
+          if (value && LABS.some((l) => l.id === value)) return value
+        } catch {
+          /* ignore malformed cookie */
+        }
       }
     }
   }

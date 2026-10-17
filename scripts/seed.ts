@@ -31,10 +31,11 @@ if (existingCategories.length > 0) {
 // --- Admin user (credentials owned by better-auth) --------------------------
 // Login: admin@lab.edu / admin123
 const ADMIN_EMAIL = 'admin@lab.edu'
+const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || crypto.randomUUID().replace(/-/g, '').slice(0, 16) + 'A1!'
 const existingAdmin = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).get()
 if (!existingAdmin) {
   await auth.api.signUpEmail({
-    body: { name: 'Lab Admin', email: ADMIN_EMAIL, username: 'admin', password: 'admin123' },
+    body: { name: 'Lab Admin', email: ADMIN_EMAIL, username: 'admin', password: ADMIN_PASSWORD },
     // signUpEmail outside a request needs explicit headers object
     headers: new Headers(),
   })
@@ -44,7 +45,8 @@ if (!existingAdmin) {
     .update(users)
     .set({ name: 'Lab Admin', role: 'ADMIN', updatedAt: new Date().toISOString() })
     .where(eq(users.email, ADMIN_EMAIL))
-  console.log('Admin user created (admin@lab.edu / admin123).')
+  console.log(`Admin user created (admin@lab.edu). Password: ${ADMIN_PASSWORD}`)
+  console.log('Change this password immediately after first login.')
 } else {
   console.log('Admin user already exists, skipping.')
 }

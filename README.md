@@ -51,7 +51,7 @@ npm run db:seed
 npm run dev
 ```
 
-Seed credentials: `admin@lab.edu / admin123`
+Seed credentials: `admin@lab.edu` with a password printed by the seed script (set `SEED_ADMIN_PASSWORD` to choose one)
 
 ### Production (Docker)
 
@@ -89,7 +89,7 @@ LAB1_NAME=Photonics Lab
 LAB2_NAME=Quantum Lab
 
 npm run db:migrate                 # migrates both database files
-npm run db:seed                    # seeds lab 1 (admin@lab.edu / admin123)
+npm run db:seed                    # seeds lab 1 (admin@lab.edu; password printed or SEED_ADMIN_PASSWORD)
 SEED_LAB=lab-2 npm run db:seed     # seeds lab 2 (same admin credentials)
 ```
 
@@ -101,7 +101,7 @@ Every account can have a **username** in addition to its email. The login page a
 
 - **Users** set/change their own username in **Settings → Username** (existing accounts keep working with email until they set one).
 - **Admin/Supervisor** can assign one when creating an account in **Users → Create User** (auto-suggested from the email, editable), and see everyone's username in the users table.
-- After `npm run db:migrate`, the seeded admin gets username `admin` automatically (login: `admin` / `admin@lab.edu`, password `admin123`).
+- After `npm run db:migrate`, the seeded admin gets username `admin` automatically (login: `admin` / `admin@lab.edu`, password from seed output).
 
 ### Changing your name and email (Settings → Profile)
 

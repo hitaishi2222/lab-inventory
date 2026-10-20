@@ -212,4 +212,4 @@ Admin manages permissions via the **Permissions** page. User accounts are create
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

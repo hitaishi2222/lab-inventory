@@ -1,5 +1,11 @@
 # Labs — Lab Inventory Management System
 
+<p>
+  <img src="https://github.com/hitaishi2222/lab-inventory/actions/workflows/ci.yml/badge.svg" alt="CI"/>
+  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/typescript-5-blue?style=flat-square&logo=typescript&logoColor=3178C6"/>
+</p>
+
 A self-hosted inventory management dashboard for a Chemistry/Physics research laboratory. Lab mates log in to check out equipment, log chemical/consumable usage, and track inventory levels. Runs as a Docker container on a home/lab server, exposed via Cloudflare Tunnel.
 
 ## Features
@@ -206,4 +212,4 @@ Admin manages permissions via the **Permissions** page. User accounts are create
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

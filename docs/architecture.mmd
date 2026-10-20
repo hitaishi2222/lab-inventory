@@ -1,0 +1,39 @@
+architecture-beta
+%% Labs architecture. This file is the source of docs/architecture.svg.
+%% Edit it, then run: npm run docs:diagram
+%%
+%% Reading order: request path left to right, storage underneath.
+%% Solid edges carry requests or reads. The dashed group (Edge) is the only
+%% piece the app does not run itself.
+  group browser(cloud)[Browser]
+  service ui(server)[React 18 SPA] in browser
+  service query(server)[TanStack Query] in browser
+
+  group edge(internet)[Edge, not self-hosted]
+  service cf(cloud)[Cloudflare Tunnel] in edge
+
+  group app(server)[Node 20 container, port 3000]
+  service spa(disk)[Static build, dist/] in app
+  service hono(server)[Hono app] in app
+  service lab(server)[Lab resolver] in app
+  service guard(server)[Permission guard] in app
+  service api(server)[REST API] in app
+  service auth(server)[Better Auth] in app
+  service orm(database)[Drizzle ORM] in app
+
+  group store(disk)[Data volume]
+  service db(database)[SQLite, one file per lab] in store
+  service snap(disk)[backups/, VACUUM INTO] in store
+
+  ui:R -- L:query
+  query:R -- L:cf
+  cf:B -- T:hono
+  hono:B -- T:spa
+  hono:R -- L:lab
+  lab:R -- L:guard
+  guard:R -- L:api
+  guard:B -- T:auth
+  api:B -- T:orm
+  auth:R -- L:orm
+  orm:B -- T:db
+  db:R -- L:snap

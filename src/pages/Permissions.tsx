@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRolePermissions, useUpdateRolePermissions } from '@/hooks/queries'
 import { ROLES, type Permission } from '@/lib/use-me'
 import { Button } from '@/components/ui/button'
@@ -54,6 +54,16 @@ export default function Permissions() {
     }
     return d
   })
+
+  // The query is usually still pending on first render, so the initializer above
+  // sees no data. Fill the draft once the server answer arrives; later
+  // invalidations (after a save) refresh it again.
+  useEffect(() => {
+    if (!byRole) return
+    const next: Draft = {}
+    for (const role of ROLES) next[role] = new Set((byRole[role] || []) as Permission[])
+    setDraft(next)
+  }, [byRole])
 
   const [saving, setSaving] = useState<Set<string>>(new Set())
 

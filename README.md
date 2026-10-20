@@ -1,214 +1,264 @@
-# Labs — Lab Inventory Management System
+# Labs
 
-<p>
-  <img src="https://github.com/hitaishi2222/lab-inventory/actions/workflows/ci.yml/badge.svg" alt="CI"/>
-  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/>
-  <img src="https://img.shields.io/badge/typescript-5-blue?style=flat-square&logo=typescript&logoColor=3178C6"/>
-</p>
+A self-hosted inventory dashboard for a shared research lab. It keeps one list of
+what the lab owns (chemicals, consumables, instruments), records who used or
+borrowed what, and warns before a chemical expires or a shelf runs empty.
 
-A self-hosted inventory management dashboard for a Chemistry/Physics research laboratory. Lab mates log in to check out equipment, log chemical/consumable usage, and track inventory levels. Runs as a Docker container on a home/lab server, exposed via Cloudflare Tunnel.
+It runs as a single Docker container, serves one lab or several isolated labs from
+the same process, and needs nothing else: no Redis, no second image for backups, no
+cron container.
 
-## Features
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
+  <img src="docs/architecture.svg" alt="Architecture: React SPA and TanStack Query in the browser, Cloudflare Tunnel at the edge, one Node container with Hono, a lab resolver, a permission guard, REST API, Better Auth and Drizzle ORM, and a data volume holding one SQLite file per lab plus backups">
+</picture>
 
-- **Inventory management** — Items with categories, quantities, units, locations, and low-stock thresholds
-- **Chemical safety tracking** — CAS number, GHS hazard class, pictograms, expiry date, storage conditions, SDS links
-- **Equipment check-out / return** — With expected return dates, status tracking, and overdue highlighting
-- **Usage logging** — Consumable/chemical usage with automatic quantity decrement and low-stock alerts
-- **Role-based access control** — Admin, Supervisor, PostDoc, PhD, Project Research Fellow, Others with granular permissions (Admin/Supervisor define who can do what)
-- **In-app notifications** — Low stock, expiring chemicals, overdue equipment
-- **Audit log** — Full create/update/delete/checkout/return trail (Admin-only)
-- **Data export** — CSV export for items, usage, checkouts, audit log, and users
-- **Password reset** — Forgot password / reset password flow (reset link printed to the server console when `LOG_RESET_LINKS=1`; wire an SMTP transporter for production)
-- **Software name customization** — Admin/Supervisor can set the lab/software name shown in the sidebar
-- **Mobile-responsive** — Tailwind CSS + shadcn/ui, sidebar on desktop, bottom nav on mobile
-- **Docker + Cloudflare Tunnel** — Single-container deployment with daily SQLite backups
+A request starts in the React SPA, reaches Hono through the Cloudflare Tunnel, and
+carries a lab id (header, query parameter or cookie). The guard loads the session and
+that role's permission set, the route handler runs against the lab's own Drizzle
+instance, and SQLite reads the matching file. Backups are written by the same process
+with `VACUUM INTO`.
 
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Vite + React 18 + TypeScript, TanStack Query, React Router |
-| Backend | Hono (Node.js) |
-| Database | Turso (libSQL) via Drizzle ORM |
-| Auth | Better Auth (email + password credentials) |
-| UI | Tailwind CSS + shadcn/ui |
-| Validation | Zod |
-| Containerization | Docker + Docker Compose |
-| Reverse Proxy | Cloudflare Tunnel |
-
-## Quick Start
-
-### Development
+The diagram is Mermaid source in [`docs/architecture.mmd`](docs/architecture.mmd),
+rendered to SVG by [Pele](https://pele.run) with CSS variable theming. Rebuild both
+themes after editing it:
 
 ```bash
-# Install dependencies
+npm run docs:diagram
+```
+
+## What it does
+
+| Area | What you get |
+|---|---|
+| **Inventory** | Items with category, quantity and unit, storage location, low-stock threshold, optional image URL. Search, category filter, pagination, CSV export. |
+| **Chemicals** | CAS number, molecular formula, GHS hazard class and pictogram codes, expiry date, storage conditions, SDS link. Chemicals that expire within the next 60 days surface on the dashboard. |
+| **Equipment** | Serial number, condition and purchase date. Check out with an expected return date, return it, see overdue items, and reserve an instrument for a future slot. |
+| **Usage** | Log consumption against an item with a note. The quantity drops, and the entry stays in the item's usage history. |
+| **Roles** | Six roles: Admin, Supervisor, PostDoc, PhD, Project Research Fellow, Others. Each role's permission set is stored in the database and edited on the Permissions page. Accounts are created by an Admin or Supervisor; public sign-up is closed. |
+| **Notifications** | Low stock, expiring chemicals and overdue equipment. Generate them on a schedule or on demand. |
+| **Audit log** | Every create, update, delete, checkout, return and login, with actor, entity, timestamp and IP. Paged, with a CSV export. |
+| **Labs** | Each extra lab gets its own database file and its own users, inventory and history. Create one from Administration → Labs, or from environment variables. |
+
+## Screenshots
+
+The dashboard: totals, low-stock and expiry warnings, usage and checkout charts, and
+the lists that need attention. It follows the theme you pick in the header.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/dashboard-dark.png">
+  <img src="screenshots/dashboard.png" alt="Dashboard in light mode with total items, low stock, checked out equipment, expiring chemicals, two activity charts and alert lists">
+</picture>
+
+Inventory: quantity, unit, location and status in one table, with filters and CSV
+export above it.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/inventory-dark.png">
+  <img src="screenshots/inventory.png" alt="Inventory table with 14 items across equipment, chemicals and consumables">
+</picture>
+
+An item page keeps the stock level, the chemical safety block (CAS, GHS class,
+expiry, storage, SDS) and the full usage history together.
+
+![Item detail page for Methanol with chemical safety fields and usage history](screenshots/item-detail.png)
+
+Equipment: checkout and return, the expected return date, and upcoming bookings with
+the person and the purpose.
+
+![Equipment page with checkout buttons, expected return dates and upcoming bookings](screenshots/equipment.png)
+
+Audit log: who changed what, newest first, with the actor and a short note for each
+entry.
+
+![Audit log listing login, create, update, checkout and return events](screenshots/audit.png)
+
+Labs: the current lab, and a form for creating another one. The new lab starts with
+default categories and permissions, and your Admin account is copied into it.
+
+![Labs page showing the current lab and a new lab form](screenshots/labs.png)
+
+Usage log and the permission matrix:
+
+| | |
+|---|---|
+| <img src="screenshots/usage.png" width="470" alt="Usage log with item, amount, user, note and time"> | <img src="screenshots/permissions.png" width="470" alt="Permission page with a checkbox grid for each role"> |
+| Logged consumption, newest first. | One checkbox per permission and role. |
+
+On a phone the tables keep their columns inside the viewport and the sidebar moves
+into a sheet.
+
+| | |
+|---|---|
+| <img src="screenshots/mobile-dashboard.png" width="300" alt="Dashboard on a 390 pixel wide viewport with stacked stat cards"> | <img src="screenshots/mobile-menu.png" width="300" alt="Navigation sheet open on a phone, listing the lab and administration links"> |
+
+Screenshots come from a demo database; names and quantities are sample data.
+
+## Run it locally
+
+```bash
 npm install
+cp .env.example .env       # set DATABASE_URL, BETTER_AUTH_URL, BETTER_AUTH_SECRET
+npm run db:setup           # generate, migrate and seed
+npm run dev                # Vite on :5173, API on :3000
+```
 
-# Set up environment
-cp .env.example .env
-# Edit .env with your values (DATABASE_URL, BETTER_AUTH_URL, BETTER_AUTH_SECRET)
+`npm run db:seed` prints the generated Admin password once. Set
+`SEED_ADMIN_PASSWORD` to choose it yourself. The seeded account is `admin@lab.edu`,
+or `admin` once the username backfill has run.
 
-# Generate and run database migrations
-npm run db:generate
-npm run db:migrate
-npm run db:seed
+Run the checks that CI runs:
 
-# Start dev servers (client :5173 + API :3000)
-npm run dev
-
-# Typecheck + tests (also what CI runs)
+```bash
 npx tsc --noEmit
 npm test
+npm run build
+npm run build:server
 ```
 
-Seed credentials: `admin@lab.edu` with a password printed by the seed script (set `SEED_ADMIN_PASSWORD` to choose one)
+The API tests call the real Hono app through `app.request` against a throwaway SQLite
+file, so no dev server is needed. They cover pagination and count semantics, the
+checkout race, stock that cannot go negative, deletes that hit foreign keys, the
+last-admin guard and role-change auditing. The migration test fails when a new
+`drizzle/*.sql` file is missing from `drizzle/meta/_journal.json` or when a migration
+has an empty statement chunk.
 
-### Tests
+## Deploy with Docker
 
-```bash
-npm test           # vitest run (unit + API + migration tests)
-npm run test:watch # watch mode
-```
-
-The API tests drive the real Hono app against a throwaway SQLite file through
-`app.request` — no dev server needed. They cover the things that broke before:
-pagination/count semantics, the checkout race, stock that cannot go negative,
-deletes that hit foreign keys, the last-admin guard and role-change auditing.
-The migration tests fail if a new `drizzle/*.sql` file is not added to
-`drizzle/meta/_journal.json`, or if a migration contains an empty statement
-chunk (libsql's migrator throws on those).
-
-### Production (Docker)
+Set the two required values and start the stack:
 
 ```bash
-# Set BETTER_AUTH_SECRET and BETTER_AUTH_URL
 export BETTER_AUTH_SECRET=$(openssl rand -base64 32)
-export BETTER_AUTH_URL=https://labs.yourdomain.com
-
-docker-compose up -d
+export BETTER_AUTH_URL=https://labs.example.com
+docker compose up -d
 ```
 
-The app runs on port 3000. Expose it via Cloudflare Tunnel pointing to `http://localhost:3000`.
+The container listens on port 3000 and serves the built SPA and the API from the same
+origin. Point a Cloudflare Tunnel at `http://localhost:3000`, or put it behind any
+reverse proxy that terminates TLS.
 
-The image builds the SPA and bundles the server to plain JavaScript
-(`npm run build:server` → `dist-server/`, esbuild), so production runs on bare
-`node` with dev dependencies removed. It also:
+The image is a three-stage build on `node:20-alpine`. It runs as the unprivileged
+`node` user (uid 1000), applies migrations and the idempotent seed on every start,
+and exposes `GET /api/health` for the Docker healthcheck. The server is bundled to
+plain JavaScript with esbuild, so production runs on bare `node` with dev
+dependencies removed.
 
-- runs as the unprivileged `node` user (uid 1000) — `./data` and `./backups` must
-  be writable by that uid (`sudo chown -R 1000:1000 ./data ./backups`), or pin
-  the container user in `docker-compose.yml`;
-- applies migrations and the idempotent seed on every start;
-- exposes `GET /api/health` for the container healthcheck.
-
-### Labs: create and manage them from the UI
-
-Open **Administration → Labs** (Admin only) to see every lab in the instance and create new ones with the **New lab** form — no restart, no config files. Each lab is a fully separate database file (own users, inventory, audit log, settings) stored next to the main database (`labs.json` registry + one `.db` file per lab).
-
-- Your Admin account is copied into the new lab automatically — sign in there with the same password.
-- After creating, press **Switch** (or log out): pick the new lab on the login page and sign in.
-- The login-page lab selector lists every lab, including ones created here.
-- New labs start with default categories, permissions and the lab name as software name — no sample items.
-- Permission `labs:manage` (Admins have it; it can be delegated via the Permissions page).
-
-Env-var labs (`LAB2_DATABASE_URL` / `LAB_DATABASES`) keep working exactly as before and appear in the same list.
-
-### Two separate labs in one instance via config (optional)
-
-One deployment can serve **two fully separate labs** (e.g. Photonics + Quantum), each with its own isolated database file — own users, inventory, equipment, audit log and settings. Nothing inside the app changes; a lab selector appears at the bottom of the login page only when a second lab is configured, otherwise it stays hidden.
+`./data` and `./backups` are bind mounts and must be writable by uid 1000:
 
 ```bash
-# .env
+sudo chown -R 1000:1000 ./data ./backups
+```
+
+## Two or more labs in one instance
+
+A lab is a database file. One process can serve several of them without sharing a
+single row between them.
+
+Create a lab in **Administration → Labs**: it gets a fresh database next to the
+current one, the default categories and permissions, and a copy of your Admin
+account (same email and password). Switch by logging out and picking the lab on the
+login page. The registry lives in `labs.json` next to the database files, so labs
+created this way survive restarts and redeploys.
+
+Labs can also come from the environment, which keeps them fixed at deploy time:
+
+```bash
 DATABASE_URL=file:./data/lab1.db
 LAB2_DATABASE_URL=file:./data/lab2.db
 LAB1_NAME=Photonics Lab
 LAB2_NAME=Quantum Lab
 
-npm run db:migrate                 # migrates both database files
-npm run db:seed                    # seeds lab 1 (admin@lab.edu; password printed or SEED_ADMIN_PASSWORD)
-SEED_LAB=lab-2 npm run db:seed     # seeds lab 2 (same admin credentials)
+npm run db:migrate                 # migrates every configured lab
+npm run db:seed                    # seeds lab 1
+SEED_LAB=lab-2 npm run db:seed     # seeds lab 2 with the same admin credentials
 ```
 
-The Admin/Supervisor reuses the same email + password in both labs and picks the lab on the login page. Users, inventory and history never cross between labs. Switching labs after login = log out, pick the other lab, log in. Daily backups cover both `*.db` files automatically.
+The login page shows a lab selector only when a second lab is configured; with one
+lab it stays hidden.
 
-### Usernames (email or username login)
+## Backups
 
-Every account can have a **username** in addition to its email. The login page accepts either — type your email or your username plus the same password. Usernames are lowercase, 3–30 characters, letters/numbers/dots/underscores, and unique per lab.
+Backups run inside the app process. Every hour the server checks the newest file in
+`BACKUP_DIR` and, if it is older than `BACKUP_INTERVAL_HOURS`, copies each lab database
+with SQLite's `VACUUM INTO`. That snapshots a live database consistently and compacts
+the copy. Only the newest `BACKUP_KEEP` files per lab are kept.
 
-- **Users** set/change their own username in **Settings → Username** (existing accounts keep working with email until they set one).
-- **Admin/Supervisor** can assign one when creating an account in **Users → Create User** (auto-suggested from the email, editable), and see everyone's username in the users table.
-- After `npm run db:migrate`, the seeded admin gets username `admin` automatically (login: `admin` / `admin@lab.edu`, password from seed output).
-
-### Changing your name and email (Settings → Profile)
-
-Any user, including the Lab Admin, can update their own **name** and **email** from Settings → Profile — no need to touch the database. Name changes save directly; email changes ask for the current password first and must be unique. You stay signed in (sessions are tied to the account, not the address), other devices are signed out on an email change, and the change is recorded in the audit log.
-
-### Database Backups
-
-Backups run inside the app process — there is no backup container and no cron
-job to install. Every `BACKUP_INTERVAL_HOURS` (default 24) the server copies each
-lab database to `BACKUP_DIR` (default `./backups`, i.e. `/app/backups` in the
-container) using SQLite's `VACUUM INTO`, which snapshots a live database
-consistently and compacts the copy. Only the newest `BACKUP_KEEP` files per lab
-(default 14) are kept; older ones are deleted.
-
-The check compares against the files on disk rather than a timer, so restarting
-or redeploying the container never creates a duplicate backup. Restoring is
-"stop the container, copy `backups/backup_<lab>_<timestamp>.db` over
-`data/lab.db`, start it again".
+Checking the files on disk instead of holding a timer is what keeps restarts and
+redeploys from producing duplicate backups. A failed backup is logged and retried on
+the next check; it does not stop the server.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `BACKUP_ENABLED` | `1` | set `0` to disable in-process backups |
-| `BACKUP_DIR` | `./backups` | destination directory (must be writable) |
+| `BACKUP_ENABLED` | `1` | set `0` to turn in-process backups off |
+| `BACKUP_DIR` | `./backups` | destination directory, must be writable |
 | `BACKUP_INTERVAL_HOURS` | `24` | minimum age before a new backup is written |
-| `BACKUP_KEEP` | `14` | backups retained per lab |
+| `BACKUP_KEEP` | `14` | files kept per lab |
 
-A failed backup is logged and retried on the next hourly check; it never takes
-the server down.
+To restore, stop the container, copy `backups/backup_<lab>_<timestamp>.db` over the
+lab's database file, and start it again.
 
-## Project Structure
+## Configuration
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | yes | libSQL URL of the primary database, usually `file:./data/lab.db` |
+| `BETTER_AUTH_URL` | yes | public base URL, used for cookies, origin checks and reset links |
+| `BETTER_AUTH_SECRET` | yes | signing secret for sessions |
+| `TRUSTED_ORIGINS` | no | comma-separated extra origins for previews or alternate domains |
+| `LAB2_DATABASE_URL`, `LAB1_NAME`, `LAB2_NAME` | no | second env-defined lab |
+| `LAB_DATABASES` | no | JSON list of labs, for more than two |
+| `LOG_RESET_LINKS` | no | set `1` to print password reset links to the server log |
+| `BACKUP_*` | no | see the backup table above |
+| `PORT` | no | defaults to 3000 |
+
+## Development notes
 
 ```
-labs/
-├── src/
-│   ├── server/           # Hono backend
-│   │   ├── db/           # Drizzle schema, client, migrations
-│   │   ├── auth.ts       # Better Auth config
-│   │   ├── routes/       # API routes (items, equipment, usage, etc.)
-│   │   ├── middleware/   # Auth + permission guards
-│   │   └── lib/          # Audit, permissions, settings helpers
-│   ├── client/           # React frontend
-│   │   ├── pages/        # Route pages
-│   │   ├── components/   # shadcn/ui + custom components
-│   │   ├── hooks/        # TanStack Query hooks
-│   │   └── lib/          # API client, auth client, helpers
-│   └── shared/           # Shared TypeScript types
-├── scripts/
-│   ├── seed.ts           # Database seeding
-│   └── generate-notifications.ts  # Scheduled notification cron
-├── drizzle/              # SQL migrations
-├── public/uploads/       # SDS documents, item images
-├── data/                 # SQLite database file (git-ignored)
-├── backups/              # DB backups (git-ignored)
-├── docker-compose.yml
-├── Dockerfile
-└── PLAN.md               # Original project plan
+src/
+├── server/          Hono app, routes, middleware, Better Auth config
+│   ├── db/          Drizzle schema, lab routing, migrations
+│   ├── routes/      items, equipment, usage, audit, users, labs, export, ...
+│   └── lib/         permissions, audit, notifications, backups, settings
+├── pages/           React Router pages
+├── components/      shadcn/ui primitives and app components
+├── hooks/           TanStack Query hooks
+└── lib/             API client, auth client, date formatting
+scripts/
+├── seed.ts          idempotent seed
+├── generate-notifications.ts  cron entry point for scheduled alerts
+└── render-architecture.mjs    Mermaid to SVG via Pele
+docs/
+├── architecture.mmd           diagram source
+└── architecture.svg           rendered light and dark variants
 ```
 
-## Roles & Permissions
+Notifications can be generated by a cron job without the web server:
 
-Six roles with Admin/Supervisor-definable permissions:
+```bash
+npx tsx scripts/generate-notifications.ts
+```
 
-| Role | Typical Permissions |
-|------|-------------------|
-| Admin | Full access (all permissions) |
-| Supervisor | Most inventory + settings management |
-| PostDoc | Create/edit items, check out/return equipment, log usage |
-| PhD | Create items, check out/return equipment, log usage |
-| Project Research Fellow | View inventory, check out/return equipment, log usage |
-| Others | View inventory, view notifications |
+The same work is available to admins as `POST /api/notifications/generate`.
 
-Admin manages permissions via the **Permissions** page. User accounts are created by Admin/Supervisor via the **Users** page (public sign-up is disabled).
+## Security notes
+
+These are the properties the code actually has, not a compliance claim.
+
+- Self sign-up is rejected. Accounts are created by an Admin or Supervisor.
+- Session cookies are httpOnly and SameSite=Lax; they are marked Secure when
+  `BETTER_AUTH_URL` starts with `https://`.
+- Every response carries `X-Content-Type-Options`, `X-Frame-Options: DENY`,
+  `Referrer-Policy` and `Permissions-Policy`; HSTS is added over HTTPS.
+- CORS allows credentials only from the listed origins, because the API depends on
+  session cookies.
+- CSV export quotes fields and prefixes values that start with `=`, `+`, `-` or `@`,
+  which blocks spreadsheet formula injection.
+- Password reset has no mail transport. The reset URL is printed to the server
+  console when `LOG_RESET_LINKS=1` (or outside production), so anyone with log access
+  can use it. Turn it off on a deployed instance and wire a mailer in
+  `src/server/auth.ts`.
+- Roles and permissions are data, so an Admin can lock a role out of a page by
+  removing its permission. Keep at least one account with `permissions:manage`.
 
 ## License
 

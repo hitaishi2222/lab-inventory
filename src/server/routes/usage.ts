@@ -1,11 +1,12 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { eq, desc, sql } from 'drizzle-orm'
+import { eq, desc, sql, and, count } from 'drizzle-orm'
 import { db } from '../db'
 import { usageLogs, items, equipmentDetails } from '../db/schema'
 import { requireAuth, requirePermission } from '../middleware/auth'
 import { logAudit } from '../lib/audit'
 import { createNotification } from '../lib/notifications'
+import { parsePagination } from '../lib/query'
 
 export const usageRouter = new Hono()
 
@@ -38,17 +39,38 @@ usageRouter.post(
     return c.json({ error: 'Cannot log consumable usage for equipment. Use check-out / return instead.' }, 400)
   }
 
-  const newQty = item.quantity - parsed.data.quantityUsed
-  await db.update(items).set({ quantity: newQty, updatedAt: sql`(datetime('now'))` }).where(eq(items.id, parsed.data.itemId))
-
+  // Atomic decrement: the guard lives in the UPDATE, so two people logging
+  // usage at the same moment can no longer both read the same quantity, and
+  // stock cannot silently go negative. `returning` tells us whether the guard
+  // matched without a second read.
   const logId = crypto.randomUUID()
-  await db.insert(usageLogs).values({
-    id: logId,
-    itemId: parsed.data.itemId,
-    userId: user.id,
-    quantityUsed: parsed.data.quantityUsed,
-    notes: parsed.data.notes,
+  const updated = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(items)
+      .set({ quantity: sql`${items.quantity} - ${parsed.data.quantityUsed}`, updatedAt: sql`(datetime('now'))` })
+      .where(and(eq(items.id, item.id), sql`${items.quantity} >= ${parsed.data.quantityUsed}`))
+      .returning({ quantity: items.quantity })
+
+    if (rows.length === 0) return null
+
+    await tx.insert(usageLogs).values({
+      id: logId,
+      itemId: item.id,
+      userId: user.id,
+      quantityUsed: parsed.data.quantityUsed,
+      notes: parsed.data.notes,
+    })
+
+    return rows[0].quantity
   })
+
+  if (updated === null) {
+    return c.json(
+      { error: `Not enough stock: ${item.quantity} ${item.unit} available, ${parsed.data.quantityUsed} requested.` },
+      409,
+    )
+  }
+  const newQty = updated
 
   if (newQty <= item.minStockThreshold) {
     await createNotification({
@@ -64,24 +86,27 @@ usageRouter.post(
   return c.json({ id: logId, message: 'Usage logged', newQuantity: newQty }, 201)
 })
 
-// GET /api/usage - List usage logs
+// GET /api/usage - List usage logs (filters + pagination pushed into SQL)
 usageRouter.get('/', requireAuth, async (c) => {
-  const { itemId, userId, page = '1', limit = '20' } = c.req.query()
-  const offset = (parseInt(page) - 1) * parseInt(limit)
+  const { itemId, userId } = c.req.query()
+  const { page, limit, offset } = parsePagination(c.req.query())
 
-  let allLogs = await db.select().from(usageLogs).orderBy(desc(usageLogs.usedAt))
+  const filters = [itemId ? eq(usageLogs.itemId, itemId) : undefined, userId ? eq(usageLogs.userId, userId) : undefined]
+    .filter((f): f is NonNullable<typeof f> => f !== undefined)
+  const where = filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : and(...filters)
 
-  if (itemId) {
-    allLogs = allLogs.filter(l => l.itemId === itemId)
-  }
-  if (userId) {
-    allLogs = allLogs.filter(l => l.userId === userId)
-  }
+  const [logs, totals] = await Promise.all([
+    db
+      .select()
+      .from(usageLogs)
+      .where(where)
+      .orderBy(desc(usageLogs.usedAt), desc(usageLogs.id))
+      .limit(limit)
+      .offset(offset),
+    db.select({ n: count() }).from(usageLogs).where(where).get(),
+  ])
 
-  const total = allLogs.length
-  const paginated = allLogs.slice(offset, offset + parseInt(limit))
-
-  return c.json({ logs: paginated, total, page: parseInt(page), limit: parseInt(limit) })
+  return c.json({ logs, total: totals?.n ?? 0, page, limit })
 })
 
 // GET /api/usage/:id - Single usage log entry

@@ -28,10 +28,11 @@ equipmentRouter.get('/reservations/upcoming', requireAuth, async (c) => {
     })
     .from(equipmentReservations)
     .innerJoin(items, eq(equipmentReservations.itemId, items.id))
-    .innerJoin(users, eq(equipmentReservations.userId, users.id))
+    // leftJoin: a booking whose owner was deleted must still show up as taken.
+    .leftJoin(users, eq(equipmentReservations.userId, users.id))
     .where(and(eq(equipmentReservations.status, 'UPCOMING'), gte(equipmentReservations.endsAt, nowIso)))
     .orderBy(equipmentReservations.startsAt)
-  return c.json({ reservations: rows })
+  return c.json({ reservations: rows.map((r) => ({ ...r, userName: r.userName ?? 'Former user' })) })
 })
 
 // DELETE /api/equipment/reservations/:resId - cancel a booking (owner or admins)
@@ -72,7 +73,10 @@ equipmentRouter.post(
 
   const equipment = await db.select().from(equipmentDetails).where(eq(equipmentDetails.itemId, id)).get()
   if (!equipment) return c.json({ error: 'Not equipment or not found' }, 404)
-  if (equipment.status === 'CHECKED_OUT') return c.json({ error: 'Already checked out' }, 400)
+  if (equipment.status === 'CHECKED_OUT') return c.json({ error: 'Already checked out' }, 409)
+  if (equipment.status === 'MAINTENANCE') {
+    return c.json({ error: 'Equipment is under maintenance and cannot be checked out.' }, 409)
+  }
 
   // Respect other users' bookings: equipment reserved right now by someone
   // else cannot be checked out. The reserver's own checkout proceeds.
@@ -85,29 +89,44 @@ equipmentRouter.post(
       endsAt: equipmentReservations.endsAt,
     })
     .from(equipmentReservations)
-    .innerJoin(users, eq(equipmentReservations.userId, users.id))
+    .leftJoin(users, eq(equipmentReservations.userId, users.id))
     .where(and(eq(equipmentReservations.itemId, id), eq(equipmentReservations.status, 'UPCOMING')))
   const blocking = currentBookings.find(
     (b) => Date.parse(b.startsAt) <= nowMs && nowMs < Date.parse(b.endsAt) && b.userId !== user.id,
   )
   if (blocking) {
     return c.json(
-      { error: `${blocking.userName} has reserved this equipment until ${blocking.endsAt}.` },
+      { error: `${blocking.userName ?? 'Another user'} has reserved this equipment until ${blocking.endsAt}.` },
       409,
     )
   }
 
-  await db.update(equipmentDetails).set({ status: 'CHECKED_OUT' }).where(eq(equipmentDetails.itemId, id))
-
+  // Claim the equipment atomically. The status check above is only for a nice
+  // error message; the UPDATE below is the real guard, so two people clicking
+  // "check out" at the same time cannot both end up with an ACTIVE checkout of
+  // the same instrument (the second finds no AVAILABLE row and gets a 409).
   const checkoutId = crypto.randomUUID()
-  await db.insert(equipmentCheckouts).values({
-    id: checkoutId,
-    itemId: id,
-    userId: user.id,
-    expectedReturnAt: parsed.data.expectedReturnAt,
-    notes: parsed.data.notes,
-    status: 'ACTIVE',
+  const claimed = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(equipmentDetails)
+      .set({ status: 'CHECKED_OUT' })
+      .where(and(eq(equipmentDetails.itemId, id), eq(equipmentDetails.status, 'AVAILABLE')))
+      .returning({ id: equipmentDetails.id })
+
+    if (rows.length === 0) return false
+
+    await tx.insert(equipmentCheckouts).values({
+      id: checkoutId,
+      itemId: id,
+      userId: user.id,
+      expectedReturnAt: parsed.data.expectedReturnAt,
+      notes: parsed.data.notes,
+      status: 'ACTIVE',
+    })
+    return true
   })
+
+  if (!claimed) return c.json({ error: 'Already checked out' }, 409)
 
   await logAudit({ userId: user.id, action: 'CHECKOUT', entityType: 'Equipment', entityId: id, details: { ...parsed.data, itemName: (await db.select({ name: items.name }).from(items).where(eq(items.id, id)).get())?.name } })
 
@@ -123,11 +142,24 @@ equipmentRouter.post(
   const id = c.req.param('id')!
   const user = c.get('user') as { id: string }
 
-  await db.update(equipmentDetails).set({ status: 'AVAILABLE' }).where(eq(equipmentDetails.itemId, id))
+  // Return is idempotent only in the sense that it cannot invent state: an
+  // ACTIVE checkout must exist. Otherwise a stray POST (or a double click on a
+  // slow connection) would mark someone else's checkout RETURNED or clear an
+  // item that was never out.
+  const returned = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(equipmentCheckouts)
+      .set({ returnedAt: sql`(datetime('now'))`, status: 'RETURNED' })
+      .where(and(eq(equipmentCheckouts.itemId, id), eq(equipmentCheckouts.status, 'ACTIVE')))
+      .returning({ id: equipmentCheckouts.id })
 
-  await db.update(equipmentCheckouts)
-    .set({ returnedAt: sql`(datetime('now'))`, status: 'RETURNED' })
-    .where(and(eq(equipmentCheckouts.itemId, id), eq(equipmentCheckouts.status, 'ACTIVE')))
+    if (rows.length === 0) return false
+
+    await tx.update(equipmentDetails).set({ status: 'AVAILABLE' }).where(eq(equipmentDetails.itemId, id))
+    return true
+  })
+
+  if (!returned) return c.json({ error: 'This equipment is not checked out.' }, 409)
 
   await logAudit({ userId: user.id, action: 'RETURN', entityType: 'Equipment', entityId: id })
 
@@ -148,10 +180,10 @@ equipmentRouter.get('/:id/reservations', requireAuth, async (c) => {
       notes: equipmentReservations.notes,
     })
     .from(equipmentReservations)
-    .innerJoin(users, eq(equipmentReservations.userId, users.id))
+    .leftJoin(users, eq(equipmentReservations.userId, users.id))
     .where(and(eq(equipmentReservations.itemId, id), eq(equipmentReservations.status, 'UPCOMING'), gte(equipmentReservations.endsAt, nowIso)))
     .orderBy(equipmentReservations.startsAt)
-  return c.json({ reservations: rows })
+  return c.json({ reservations: rows.map((r) => ({ ...r, userName: r.userName ?? 'Former user' })) })
 })
 
 // POST /api/equipment/:id/reservations - book a future slot
@@ -192,12 +224,12 @@ equipmentRouter.post(
       endsAt: equipmentReservations.endsAt,
     })
     .from(equipmentReservations)
-    .innerJoin(users, eq(equipmentReservations.userId, users.id))
+    .leftJoin(users, eq(equipmentReservations.userId, users.id))
     .where(and(eq(equipmentReservations.itemId, id), eq(equipmentReservations.status, 'UPCOMING')))
   const clash = existing.find((r) => startMs < Date.parse(r.endsAt) && Date.parse(r.startsAt) < endMs)
   if (clash) {
     return c.json(
-      { error: `Already booked by ${clash.userName} from ${clash.startsAt} to ${clash.endsAt}.` },
+      { error: `Already booked by ${clash.userName ?? 'another user'} from ${clash.startsAt} to ${clash.endsAt}.` },
       409,
     )
   }

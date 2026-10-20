@@ -1,13 +1,16 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { gte } from 'drizzle-orm'
+import { and, count, eq, gte, notExists, sql } from 'drizzle-orm'
 import { db } from '../db'
-import { usageLogs, equipmentCheckouts, items } from '../db/schema'
+import { usageLogs, equipmentCheckouts, items, equipmentDetails, chemicalDetails } from '../db/schema'
 import { requireAuth } from '../middleware/auth'
 
 export const dashboardRouter = new Hono()
 
 const rangeSchema = z.enum(['7d', '30d', '90d', '12m'])
+
+// How many rows each dashboard list shows before "…and N more" is implied.
+const LIST_PREVIEW = 8
 
 interface BucketDef {
   key: string
@@ -124,6 +127,69 @@ function toSeries(
 
   return { total, top, columns }
 }
+
+// GET /api/dashboard/summary
+//
+// The dashboard cards used to be computed in the browser from
+// `GET /api/items?limit=500`: every visit shipped up to 500 item rows with
+// their chemical/equipment details just to count them, and once a lab passed
+// 500 items the totals silently went wrong. These are four indexed COUNTs and
+// three preview lists instead.
+//
+// Dates are compared in SQL with date('now') on purpose: expiry_date is a
+// `YYYY-MM-DD` string, so 'expiring within 60 days' means strictly later than
+// today and no later than today+60 (same window the client used to compute).
+dashboardRouter.get('/summary', requireAuth, async (c) => {
+  const notEquipment = notExists(
+    db.select({ one: sql`1` }).from(equipmentDetails).where(eq(equipmentDetails.itemId, items.id)),
+  )
+  const lowStockWhere = and(notEquipment, sql`${items.quantity} <= ${items.minStockThreshold}`)
+  const checkedOutWhere = eq(equipmentDetails.status, 'CHECKED_OUT')
+  const expiringWhere = and(
+    sql`${chemicalDetails.expiryDate} > date('now')`,
+    sql`${chemicalDetails.expiryDate} <= date('now', '+60 days')`,
+  )
+
+  const [totalRow, lowStockCount, checkedOutCount, expiringCount, lowStock, checkedOut, expiring] = await Promise.all([
+    db.select({ n: count() }).from(items).get(),
+    db.select({ n: count() }).from(items).where(lowStockWhere).get(),
+    db.select({ n: count() }).from(equipmentDetails).where(checkedOutWhere).get(),
+    db.select({ n: count() }).from(chemicalDetails).where(expiringWhere).get(),
+    db
+      .select({
+        id: items.id,
+        name: items.name,
+        quantity: items.quantity,
+        unit: items.unit,
+        minStockThreshold: items.minStockThreshold,
+      })
+      .from(items)
+      .where(lowStockWhere)
+      .orderBy(sql`${items.quantity} - ${items.minStockThreshold}`)
+      .limit(LIST_PREVIEW),
+    db
+      .select({ id: items.id, name: items.name })
+      .from(equipmentDetails)
+      .innerJoin(items, eq(equipmentDetails.itemId, items.id))
+      .where(checkedOutWhere)
+      .orderBy(items.name)
+      .limit(LIST_PREVIEW),
+    db
+      .select({ id: items.id, name: items.name, expiryDate: chemicalDetails.expiryDate })
+      .from(chemicalDetails)
+      .innerJoin(items, eq(chemicalDetails.itemId, items.id))
+      .where(expiringWhere)
+      .orderBy(chemicalDetails.expiryDate)
+      .limit(LIST_PREVIEW),
+  ])
+
+  return c.json({
+    totalItems: totalRow?.n ?? 0,
+    lowStock: { count: lowStockCount?.n ?? 0, items: lowStock },
+    checkedOut: { count: checkedOutCount?.n ?? 0, items: checkedOut },
+    expiringSoon: { count: expiringCount?.n ?? 0, items: expiring },
+  })
+})
 
 // GET /api/dashboard/activity?range=7d|30d|90d|12m
 // Event counts (not quantities — items use mixed units like mL vs boxes, so

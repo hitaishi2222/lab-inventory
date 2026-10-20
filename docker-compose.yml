@@ -1,6 +1,9 @@
 services:
   app:
     build: .
+    # One image, one port: the container serves the React build and the API on
+    # 3000, and runs the SQLite backups in-process (src/server/lib/backup.ts).
+    # Nothing else needs to exist — no backup sidecar, no second image.
     ports:
       - "3000:3000"
     environment:
@@ -16,17 +19,23 @@ services:
       - BETTER_AUTH_URL=${BETTER_AUTH_URL:-https://labs.example.com}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
       - TRUSTED_ORIGINS=${TRUSTED_ORIGINS:-}
+      # --- Backups (in-process, per lab) ---
+      # - BACKUP_ENABLED=1
+      # - BACKUP_DIR=/app/backups
+      # - BACKUP_INTERVAL_HOURS=24
+      # - BACKUP_KEEP=14
     volumes:
       - ./data:/app/data
       - ./backups:/app/backups
+    # The container runs as the unprivileged `node` user (uid 1000) so a bug in
+    # the app cannot rewrite the image. If your host user is not uid 1000, give
+    # the mounted directories that ownership, or pin the container user:
+    #   user: "${UID:-1000}:${GID:-1000}"
+    #   sudo chown -R 1000:1000 ./data ./backups
     restart: unless-stopped
-
-  backup:
-    image: alpine:latest
-    volumes:
-      - ./data:/data
-      - ./backups:/backups
-    command: >
-      sh -c "apk add --no-cache sqlite &&
-             echo '0 2 * * * for f in /data/*.db; do n=$$(basename $$f .db); sqlite3 $$f \".backup /backups/backup_$${n}_$$(date +\%Y\%m\%d_\%H\%M\%S).db\"; done' | crontab - && cron -f"
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

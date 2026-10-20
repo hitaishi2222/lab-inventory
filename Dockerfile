@@ -1,33 +1,42 @@
-FROM node:20-alpine AS base
-
-# Install dependencies
-FROM base AS deps
+# ---- deps: install everything once (cached on package*.json) ----------------
+FROM node:20-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 RUN npm ci
 
-# Build the application
-FROM base AS builder
+# ---- builder: typecheck + build the SPA and the server bundles -------------
+FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN npm run build        # tsc --noEmit && vite build  -> dist/
+RUN npm run build:server # esbuild                   -> dist-server/
 
-# Production image
-FROM base AS runner
+# ---- runner: production deps only, no compiler, no root --------------------
+FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# tsx/typescript/vite live in devDependencies now, so this is the runtime set:
+# hono, better-auth, drizzle-orm, @libsql/client, zod, dotenv.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/src/server ./src/server
-COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/dist-server ./dist-server
 COPY --from=builder /app/drizzle ./drizzle
 
-RUN mkdir -p /app/data /app/backups
+# The app writes SQLite files and backups into these paths; they must be
+# writable by the unprivileged `node` user (uid 1000).
+RUN mkdir -p /app/data /app/backups && chown -R node:node /app/data /app/backups
+
+USER node
 
 EXPOSE 3000
 
-# Migrate (and seed on first run) before starting. Seed is idempotent.
-CMD ["sh", "-c", "npx tsx src/server/db/migrate.ts && npx tsx scripts/seed.ts && npx tsx src/server/index.ts"]
+# Migrations + seed are idempotent, so running them on every start is safe and
+# keeps the image the only thing you need to deploy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1
+
+CMD ["sh", "-c", "node dist-server/migrate.js && node dist-server/seed.js && node dist-server/index.js"]

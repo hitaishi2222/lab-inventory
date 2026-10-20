@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { eq } from 'drizzle-orm'
+import { count, eq } from 'drizzle-orm'
 import { verifyPassword } from 'better-auth/crypto'
 import { db } from '../db'
 import { users, user as authUser, account as authAccount } from '../db/schema'
@@ -11,6 +11,16 @@ import { getSettings } from '../lib/settings'
 import { type Permission } from '../lib/permissions'
 
 export const usersRouter = new Hono()
+
+/**
+ * Number of ADMIN accounts in the current lab. Used to refuse the two ways an
+ * installation can lock itself out: deleting the only admin, or demoting them.
+ * The table is tiny and role is not indexed, so a plain COUNT is fine.
+ */
+async function countAdmins(): Promise<number> {
+  const row = await db.select({ n: count() }).from(users).where(eq(users.role, 'ADMIN')).get()
+  return row?.n ?? 0
+}
 
 // GET /api/users/me - Own profile (role + permissions, for UI gating)
 usersRouter.get('/me', requireAuth, async (c) => {
@@ -215,7 +225,32 @@ usersRouter.put(
   const parsed = schema.safeParse(body)
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400)
 
+  const me = c.get('user') as { id: string; email: string }
+  const target = await db.select().from(users).where(eq(users.id, id)).get()
+  if (!target) return c.json({ error: 'User not found' }, 404)
+  if (target.role === parsed.data.role) return c.json({ message: 'Role unchanged' })
+
+  // Last admin out locks everyone out of permissions, labs and user management —
+  // there is no recovery path short of editing the database by hand.
+  if (target.role === 'ADMIN' && (await countAdmins()) <= 1) {
+    return c.json(
+      { error: 'This is the only administrator. Promote another account first.' },
+      409,
+    )
+  }
+
   await db.update(users).set({ role: parsed.data.role, updatedAt: new Date().toISOString() }).where(eq(users.id, id))
+
+  // Role changes grant and revoke access, so they belong in the audit trail
+  // like every other mutation.
+  await logAudit({
+    userId: me.id,
+    action: 'UPDATE',
+    entityType: 'User',
+    entityId: id,
+    details: { email: target.email, roleFrom: target.role, roleTo: parsed.data.role, by: me.email },
+  })
+
   return c.json({ message: 'Role updated' })
 })
 
@@ -226,14 +261,35 @@ usersRouter.delete(
   requirePermission('users:manage'),
   async (c) => {
   const id = c.req.param('id')!
-  const me = c.get('user') as { id: string }
+  const me = c.get('user') as { id: string; email: string }
   if (id === me.id) return c.json({ error: 'You cannot delete your own account.' }, 400)
   const target = await db.select().from(users).where(eq(users.id, id)).get()
   if (!target) return c.json({ error: 'User not found' }, 404)
-  // Remove the app profile first, then the better-auth identity (its
-  // sessions/accounts cascade via FK). Otherwise the orphaned auth account
-  // keeps its sessions alive and the email can never be re-registered.
-  await db.delete(users).where(eq(users.id, id))
-  await db.delete(authUser).where(eq(authUser.email, target.email))
+  if (target.role === 'ADMIN' && (await countAdmins()) <= 1) {
+    return c.json(
+      { error: 'This is the only administrator. Promote another account before deleting it.' },
+      409,
+    )
+  }
+
+  // Remove the app profile first, then the better-auth identity (its sessions
+  // and accounts cascade via FK). Otherwise the orphaned auth account keeps its
+  // sessions alive and the email can never be re-registered. Both rows go in one
+  // transaction: a half-deleted account is worse than no deletion at all.
+  // History rows (audit, usage, checkouts, reservations) now survive with
+  // user_id NULL — see drizzle/0006_user_fk_set_null.sql.
+  await db.transaction(async (tx) => {
+    await tx.delete(users).where(eq(users.id, id))
+    await tx.delete(authUser).where(eq(authUser.email, target.email))
+  })
+
+  await logAudit({
+    userId: me.id,
+    action: 'DELETE',
+    entityType: 'User',
+    entityId: id,
+    details: { email: target.email, role: target.role, by: me.email },
+  })
+
   return c.json({ message: 'User deleted' })
 })

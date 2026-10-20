@@ -12,7 +12,7 @@ A self-hosted inventory management dashboard for a Chemistry/Physics research la
 - **In-app notifications** — Low stock, expiring chemicals, overdue equipment
 - **Audit log** — Full create/update/delete/checkout/return trail (Admin-only)
 - **Data export** — CSV export for items, usage, checkouts, audit log, and users
-- **Password reset** — Forgot password / reset password flow (reset link logged to server console in self-hosted mode)
+- **Password reset** — Forgot password / reset password flow (reset link printed to the server console when `LOG_RESET_LINKS=1`; wire an SMTP transporter for production)
 - **Software name customization** — Admin/Supervisor can set the lab/software name shown in the sidebar
 - **Mobile-responsive** — Tailwind CSS + shadcn/ui, sidebar on desktop, bottom nav on mobile
 - **Docker + Cloudflare Tunnel** — Single-container deployment with daily SQLite backups
@@ -49,9 +49,28 @@ npm run db:seed
 
 # Start dev servers (client :5173 + API :3000)
 npm run dev
+
+# Typecheck + tests (also what CI runs)
+npx tsc --noEmit
+npm test
 ```
 
 Seed credentials: `admin@lab.edu` with a password printed by the seed script (set `SEED_ADMIN_PASSWORD` to choose one)
+
+### Tests
+
+```bash
+npm test           # vitest run (unit + API + migration tests)
+npm run test:watch # watch mode
+```
+
+The API tests drive the real Hono app against a throwaway SQLite file through
+`app.request` — no dev server needed. They cover the things that broke before:
+pagination/count semantics, the checkout race, stock that cannot go negative,
+deletes that hit foreign keys, the last-admin guard and role-change auditing.
+The migration tests fail if a new `drizzle/*.sql` file is not added to
+`drizzle/meta/_journal.json`, or if a migration contains an empty statement
+chunk (libsql's migrator throws on those).
 
 ### Production (Docker)
 
@@ -64,6 +83,16 @@ docker-compose up -d
 ```
 
 The app runs on port 3000. Expose it via Cloudflare Tunnel pointing to `http://localhost:3000`.
+
+The image builds the SPA and bundles the server to plain JavaScript
+(`npm run build:server` → `dist-server/`, esbuild), so production runs on bare
+`node` with dev dependencies removed. It also:
+
+- runs as the unprivileged `node` user (uid 1000) — `./data` and `./backups` must
+  be writable by that uid (`sudo chown -R 1000:1000 ./data ./backups`), or pin
+  the container user in `docker-compose.yml`;
+- applies migrations and the idempotent seed on every start;
+- exposes `GET /api/health` for the container healthcheck.
 
 ### Labs: create and manage them from the UI
 
@@ -109,7 +138,27 @@ Any user, including the Lab Admin, can update their own **name** and **email** f
 
 ### Database Backups
 
-The `docker-compose.yml` includes a `backup` service that runs a daily SQLite `.backup` cron job to `./backups/`.
+Backups run inside the app process — there is no backup container and no cron
+job to install. Every `BACKUP_INTERVAL_HOURS` (default 24) the server copies each
+lab database to `BACKUP_DIR` (default `./backups`, i.e. `/app/backups` in the
+container) using SQLite's `VACUUM INTO`, which snapshots a live database
+consistently and compacts the copy. Only the newest `BACKUP_KEEP` files per lab
+(default 14) are kept; older ones are deleted.
+
+The check compares against the files on disk rather than a timer, so restarting
+or redeploying the container never creates a duplicate backup. Restoring is
+"stop the container, copy `backups/backup_<lab>_<timestamp>.db` over
+`data/lab.db`, start it again".
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BACKUP_ENABLED` | `1` | set `0` to disable in-process backups |
+| `BACKUP_DIR` | `./backups` | destination directory (must be writable) |
+| `BACKUP_INTERVAL_HOURS` | `24` | minimum age before a new backup is written |
+| `BACKUP_KEEP` | `14` | backups retained per lab |
+
+A failed backup is logged and retried on the next hourly check; it never takes
+the server down.
 
 ## Project Structure
 

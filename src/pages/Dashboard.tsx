@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { BoxesIcon, TriangleAlertIcon, MicroscopeIcon, FlaskConicalIcon } from 'lucide-react'
-import { useItems } from '@/hooks/queries'
+import { useDashboardSummary } from '@/hooks/queries'
 import { useDateTime } from '@/lib/date-format'
 import { ActivityCharts } from '@/components/activity-charts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -32,44 +32,36 @@ function StatCard({
 }
 
 export default function Dashboard() {
-  const { data, isPending, isError } = useItems({ limit: 500 })
+  const { data, isPending, isError } = useDashboardSummary()
   const { formatDate } = useDateTime()
 
   if (isPending) return <p className="text-sm text-muted-foreground">Loading dashboard…</p>
-  if (isError) return <p className="text-sm text-destructive">Failed to load dashboard.</p>
+  if (isError || !data) return <p className="text-sm text-destructive">Failed to load dashboard.</p>
 
-  const items = data.items
-
-  const lowStock = items.filter((i) => !i.equipment && i.quantity <= i.minStockThreshold)
-  const checkedOut = items.filter((i) => i.equipment?.status === 'CHECKED_OUT')
-  const now = new Date()
-  const soon = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000)
-  const expiring = items.filter((i) => {
-    if (!i.chemical?.expiryDate) return false
-    const exp = new Date(i.chemical.expiryDate)
-    return exp >= now && exp <= soon
-  })
+  const lowStock = data.lowStock.items
+  const checkedOut = data.checkedOut.items
+  const expiring = data.expiringSoon.items
 
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={BoxesIcon} label="Total items" value={items.length} />
+        <StatCard icon={BoxesIcon} label="Total items" value={data.totalItems} />
         <StatCard
           icon={TriangleAlertIcon}
           label="Low stock"
-          value={lowStock.length}
-          hint={lowStock.length ? 'Needs restocking' : 'All stocked'}
+          value={data.lowStock.count}
+          hint={data.lowStock.count ? 'Needs restocking' : 'All stocked'}
         />
         <StatCard
           icon={MicroscopeIcon}
           label="Equipment checked out"
-          value={checkedOut.length}
+          value={data.checkedOut.count}
         />
         <StatCard
           icon={FlaskConicalIcon}
           label="Expiring within 60 days"
-          value={expiring.length}
-          hint={expiring.length ? 'Check chemical safety' : 'Nothing expiring soon'}
+          value={data.expiringSoon.count}
+          hint={data.expiringSoon.count ? 'Check chemical safety' : 'Nothing expiring soon'}
         />
       </div>
 
@@ -136,7 +128,7 @@ export default function Dashboard() {
                     {i.name}
                   </Link>
                   <span className="ml-auto text-muted-foreground">
-                    Expires {i.chemical?.expiryDate ? formatDate(i.chemical.expiryDate) : '—'}
+                    Expires {i.expiryDate ? formatDate(i.expiryDate) : '—'}
                   </span>
                 </li>
               ))}

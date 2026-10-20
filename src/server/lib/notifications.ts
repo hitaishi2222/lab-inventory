@@ -72,7 +72,8 @@ export async function generateScheduledNotifications(params: {
       .where(eq(equipmentCheckouts.id, co.id))
 
     await createNotification({
-      userId: co.userId,
+      // A checkout whose owner was deleted has no one to notify.
+      userId: co.userId ?? undefined,
       type: 'OVERDUE_EQUIPMENT',
       title: 'Overdue equipment',
       message: 'Equipment is past its expected return date.',

@@ -1,4 +1,3 @@
---> statement-breakpoint
 CREATE TABLE `role_permissions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`role` text NOT NULL,

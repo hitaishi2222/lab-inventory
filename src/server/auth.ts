@@ -4,6 +4,7 @@ import { username } from 'better-auth/plugins/username'
 import { eq } from 'drizzle-orm'
 import { getLabDb, db, labStorage, allLabIds } from './db'
 import { LABS } from './db/labs'
+import { log, maskEmail } from './lib/log'
 import { user, session, account, verification, users } from './db/schema'
 
 /**
@@ -41,13 +42,20 @@ function makeAuth(labId: string) {
       // can copy-paste it to the user. Configure a real transporter
       // (e.g. nodemailer) here for production email delivery.
       sendResetPassword: async ({ user, url }) => {
-        const sep = '='.repeat(60)
-        console.log('\n' + sep)
-        console.log(`PASSWORD RESET REQUEST [lab: ${labId}]`)
-        console.log(`User: ${user.name} <${user.email}>`)
-        console.log(`Reset URL: ${url}`)
-        // Do not log the raw token separately; the URL already carries it.
-        console.log(sep + '\n')
+        // The reset URL *is* a single-use credential, so it is only printed
+        // when the operator opts in: LOG_RESET_LINKS=1 in .env, or implicitly
+        // outside production (dev keeps working with zero configuration).
+        // On a deployed instance turn it off and wire a real transporter —
+        // otherwise anyone with log access can take over any account.
+        const opted = process.env.LOG_RESET_LINKS
+        const mayLogLink = opted ? /^(1|true|yes)$/i.test(opted) : process.env.NODE_ENV !== 'production'
+        if (!mayLogLink) {
+          log.warn(`Password reset requested [lab: ${labId}] — set LOG_RESET_LINKS=1 to print the link.`)
+          return
+        }
+        log.info(`PASSWORD RESET REQUEST [lab: ${labId}] user=${maskEmail(user.email)}`)
+        // Printed verbatim: redaction would strip the token the admin needs.
+        log.verbatim(`Reset URL: ${url}`)
       },
     },
     trustedOrigins: [

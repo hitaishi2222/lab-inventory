@@ -658,10 +658,17 @@ const SidebarMenuSkeleton = React.forwardRef<
     showIcon?: boolean
   }
 >(({ className, showIcon = false, ...props }, ref) => {
-  // Random width between 50 to 90%.
+  // Pseudo-random width between 50 and 90%, derived from the stable instance
+  // id instead of Math.random: every skeleton row still looks slightly
+  // different, but the width is identical across renders (no layout flicker).
+  const instanceId = React.useId()
   const width = React.useMemo(() => {
-    return `${Math.floor(Math.random() * 40) + 50}%`
-  }, [])
+    let hash = 0
+    for (let i = 0; i < instanceId.length; i++) {
+      hash = (hash * 31 + instanceId.charCodeAt(i)) % 41
+    }
+    return `${50 + hash}%`
+  }, [instanceId])
 
   return (
     <div

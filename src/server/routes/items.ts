@@ -1,35 +1,59 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { eq, desc, like, sql, inArray } from 'drizzle-orm'
+import { eq, desc, like, or, sql, inArray, count } from 'drizzle-orm'
 import { db } from '../db'
-import { items, chemicalDetails, equipmentDetails, equipmentCheckouts, usageLogs } from '../db/schema'
+import {
+  items,
+  chemicalDetails,
+  equipmentDetails,
+  equipmentCheckouts,
+  equipmentReservations,
+  usageLogs,
+} from '../db/schema'
 import { requireAuth, requirePermission } from '../middleware/auth'
 import { logAudit } from '../lib/audit'
+import { likeContains, parsePagination } from '../lib/query'
 
 export const itemsRouter = new Hono()
 
-// GET /api/items - List all items with filters
+// GET /api/items - List items with search + pagination (filter/count/limit all
+// pushed into SQL; the response shape is unchanged).
 itemsRouter.get('/', requireAuth, async (c) => {
-  const { search, page = '1', limit = '20' } = c.req.query()
-  const offset = (parseInt(page) - 1) * parseInt(limit)
+  const { search } = c.req.query()
+  const { page, limit, offset } = parsePagination(c.req.query())
 
-  let query
-  if (search) {
-    query = db.select().from(items).where(like(items.name, `%${search}%`)).orderBy(desc(items.createdAt))
-  } else {
-    query = db.select().from(items).orderBy(desc(items.createdAt))
-  }
+  // Name, description and location all match — a search for "shelf 3" used to
+  // return nothing even though every item carries that location.
+  const where = search?.trim()
+    ? or(
+        like(items.name, likeContains(search)),
+        like(items.description, likeContains(search)),
+        like(items.location, likeContains(search)),
+      )
+    : undefined
 
-  const allItems = await query
-  const total = allItems.length
-  const paginated = allItems.slice(offset, offset + parseInt(limit))
+  const [rows, totals] = await Promise.all([
+    // id is the tiebreaker: createdAt is second-resolution text, so several
+    // items created in the same second would otherwise shuffle between pages
+    // and could be shown twice or skipped entirely.
+    db
+      .select()
+      .from(items)
+      .where(where)
+      .orderBy(desc(items.createdAt), desc(items.id))
+      .limit(limit)
+      .offset(offset),
+    db.select({ n: count() }).from(items).where(where).get(),
+  ])
+
+  const total = totals?.n ?? 0
 
   // Attach nested details (same shape as GET /api/items/:id). The list is
-  // what Inventory, Dashboard and Equipment render from — without this,
-  // item.equipment / item.chemical are undefined and every equipment-aware
-  // display (availability badges, stock-badge suppression, expiry filter)
-  // silently breaks.
-  const pageIds = paginated.map((i) => i.id)
+  // what Inventory and Equipment render from — without this, item.equipment /
+  // item.chemical are undefined and every equipment-aware display
+  // (availability badges, stock-badge suppression, expiry filter) breaks.
+  // Two queries for the whole page, not two per row.
+  const pageIds = rows.map((i) => i.id)
   const [chemicals, equipments] = await Promise.all([
     pageIds.length
       ? db.select().from(chemicalDetails).where(inArray(chemicalDetails.itemId, pageIds))
@@ -40,13 +64,13 @@ itemsRouter.get('/', requireAuth, async (c) => {
   ])
   const chemicalByItem = new Map(chemicals.map((cd) => [cd.itemId, cd]))
   const equipmentByItem = new Map(equipments.map((ed) => [ed.itemId, ed]))
-  const enriched = paginated.map((i) => ({
+  const enriched = rows.map((i) => ({
     ...i,
     chemical: chemicalByItem.get(i.id) ?? null,
     equipment: equipmentByItem.get(i.id) ?? null,
   }))
 
-  return c.json({ items: enriched, total, page: parseInt(page), limit: parseInt(limit) })
+  return c.json({ items: enriched, total, page, limit })
 })
 
 // GET /api/items/:id - Get single item
@@ -69,13 +93,13 @@ itemsRouter.post(
   async (c) => {
   const body = await c.req.json()
   const schema = z.object({
-    name: z.string().min(1),
+    name: z.string().min(1).max(200),
     categoryId: z.string(),
-    description: z.string().optional(),
-    location: z.string().optional(),
-    quantity: z.number().default(0),
-    unit: z.string().default('pieces'),
-    minStockThreshold: z.number().default(0),
+    description: z.string().max(2000).optional(),
+    location: z.string().max(200).optional(),
+    quantity: z.number().min(0).default(0),
+    unit: z.string().max(50).default('pieces'),
+    minStockThreshold: z.number().min(0).default(0),
     chemical: z.object({
       casNumber: z.string().optional(),
       hazardClass: z.string().optional(),
@@ -97,32 +121,37 @@ itemsRouter.post(
   const id = crypto.randomUUID()
   const user = c.get('user') as { id: string }
 
-  await db.insert(items).values({
-    id,
-    name: parsed.data.name,
-    categoryId: parsed.data.categoryId,
-    description: parsed.data.description,
-    location: parsed.data.location,
-    quantity: parsed.data.quantity,
-    unit: parsed.data.unit,
-    minStockThreshold: parsed.data.minStockThreshold,
+  // One transaction: an item plus its chemical/equipment detail rows are a
+  // single logical record. A failure halfway through used to leave an item
+  // with no details (or details pointing at nothing).
+  await db.transaction(async (tx) => {
+    await tx.insert(items).values({
+      id,
+      name: parsed.data.name,
+      categoryId: parsed.data.categoryId,
+      description: parsed.data.description,
+      location: parsed.data.location,
+      quantity: parsed.data.quantity,
+      unit: parsed.data.unit,
+      minStockThreshold: parsed.data.minStockThreshold,
+    })
+
+    if (parsed.data.chemical) {
+      await tx.insert(chemicalDetails).values({
+        id: crypto.randomUUID(),
+        itemId: id,
+        ...parsed.data.chemical,
+      })
+    }
+
+    if (parsed.data.equipment) {
+      await tx.insert(equipmentDetails).values({
+        id: crypto.randomUUID(),
+        itemId: id,
+        ...parsed.data.equipment,
+      })
+    }
   })
-
-  if (parsed.data.chemical) {
-    await db.insert(chemicalDetails).values({
-      id: crypto.randomUUID(),
-      itemId: id,
-      ...parsed.data.chemical,
-    })
-  }
-
-  if (parsed.data.equipment) {
-    await db.insert(equipmentDetails).values({
-      id: crypto.randomUUID(),
-      itemId: id,
-      ...parsed.data.equipment,
-    })
-  }
 
   await logAudit({ userId: user.id, action: 'CREATE', entityType: 'Item', entityId: id, details: { name: parsed.data.name } })
 
@@ -178,30 +207,40 @@ itemsRouter.put(
     return c.json({ error: (baseParsed.success ? parsed : baseParsed).error?.flatten() }, 400)
   }
 
+  const existingItem = await db.select({ id: items.id, name: items.name }).from(items).where(eq(items.id, id)).get()
+  if (!existingItem) return c.json({ error: 'Not found' }, 404)
+
   const base = baseParsed.data
-  if (Object.keys(base).length > 0) {
-    await db.update(items).set({ ...base, updatedAt: sql`(datetime('now'))` }).where(eq(items.id, id))
-  }
-
   const chemical = parsed.data.chemical
-  if (chemical) {
-    const existing = await db.select().from(chemicalDetails).where(eq(chemicalDetails.itemId, id)).get()
-    if (existing) {
-      await db.update(chemicalDetails).set(chemical).where(eq(chemicalDetails.itemId, id))
-    } else {
-      await db.insert(chemicalDetails).values({ id: crypto.randomUUID(), itemId: id, ...chemical })
-    }
-  }
-
   const equipment = parsed.data.equipment
-  if (equipment) {
-    const existing = await db.select().from(equipmentDetails).where(eq(equipmentDetails.itemId, id)).get()
-    if (existing) {
-      await db.update(equipmentDetails).set(equipment).where(eq(equipmentDetails.itemId, id))
-    } else {
-      await db.insert(equipmentDetails).values({ id: crypto.randomUUID(), itemId: id, ...equipment })
+
+  // Item + details move together, so a failed detail write cannot leave the
+  // row half-updated.
+  await db.transaction(async (tx) => {
+    if (Object.keys(base).length > 0) {
+      await tx.update(items).set({ ...base, updatedAt: sql`(datetime('now'))` }).where(eq(items.id, id))
     }
-  }
+
+    if (chemical) {
+      const existing = await tx.select({ id: chemicalDetails.id }).from(chemicalDetails)
+        .where(eq(chemicalDetails.itemId, id)).get()
+      if (existing) {
+        await tx.update(chemicalDetails).set(chemical).where(eq(chemicalDetails.itemId, id))
+      } else {
+        await tx.insert(chemicalDetails).values({ id: crypto.randomUUID(), itemId: id, ...chemical })
+      }
+    }
+
+    if (equipment) {
+      const existing = await tx.select({ id: equipmentDetails.id }).from(equipmentDetails)
+        .where(eq(equipmentDetails.itemId, id)).get()
+      if (existing) {
+        await tx.update(equipmentDetails).set(equipment).where(eq(equipmentDetails.itemId, id))
+      } else {
+        await tx.insert(equipmentDetails).values({ id: crypto.randomUUID(), itemId: id, ...equipment })
+      }
+    }
+  })
 
   await logAudit({ userId: user.id, action: 'UPDATE', entityType: 'Item', entityId: id, details: body })
 
@@ -256,12 +295,17 @@ itemsRouter.delete(
   const item = await db.select().from(items).where(eq(items.id, id)).get()
   if (!item) return c.json({ error: 'Not found' }, 404)
 
-  // Hard delete: remove child rows first (no DB-level cascades)
-  await db.delete(chemicalDetails).where(eq(chemicalDetails.itemId, id))
-  await db.delete(equipmentDetails).where(eq(equipmentDetails.itemId, id))
-  await db.delete(equipmentCheckouts).where(eq(equipmentCheckouts.itemId, id))
-  await db.delete(usageLogs).where(eq(usageLogs.itemId, id))
-  await db.delete(items).where(eq(items.id, id))
+  // Hard delete: remove child rows first (no DB-level cascades). Reservations
+  // are part of that set — libsql runs with foreign_keys=1, so a booking that
+  // outlives its item turns the delete into a 500 instead of a cleanup.
+  await db.transaction(async (tx) => {
+    await tx.delete(chemicalDetails).where(eq(chemicalDetails.itemId, id))
+    await tx.delete(equipmentDetails).where(eq(equipmentDetails.itemId, id))
+    await tx.delete(equipmentReservations).where(eq(equipmentReservations.itemId, id))
+    await tx.delete(equipmentCheckouts).where(eq(equipmentCheckouts.itemId, id))
+    await tx.delete(usageLogs).where(eq(usageLogs.itemId, id))
+    await tx.delete(items).where(eq(items.id, id))
+  })
 
   await logAudit({ userId: user.id, action: 'DELETE', entityType: 'Item', entityId: id, details: { name: item.name } })
 

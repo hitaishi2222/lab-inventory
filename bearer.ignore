@@ -1,0 +1,98 @@
+{
+  "13b92169169c2c6f35fc77c070f7e752_0": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:30:42Z"
+  },
+  "32ba69371a7cc4f99e18f3d5648229db_0": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:30:41Z"
+  },
+  "677be56df3ac3b905bb76052929942f6_0": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:30:41Z"
+  },
+  "9c7fa490e2441cb3943a378962f46c9e_0": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:30:41Z"
+  },
+  "9c7fa490e2441cb3943a378962f46c9e_1": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:30:41Z"
+  },
+  "a127ee7d37cfc20906eba37a5872e6c3_0": {
+    "author": "Hitaishi V",
+    "comment": "Backup logs contain only a lab id, a local backup path and a byte count; they go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T14:21:23Z"
+  },
+  "a127ee7d37cfc20906eba37a5872e6c3_1": {
+    "author": "Hitaishi V",
+    "comment": "Backup logs contain only a lab id, a local backup path and a byte count; they go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T14:21:23Z"
+  },
+  "a127ee7d37cfc20906eba37a5872e6c3_2": {
+    "author": "Hitaishi V",
+    "comment": "Backup logs contain only a lab id, a local backup path and a byte count; they go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T14:21:24Z"
+  },
+  "a127ee7d37cfc20906eba37a5872e6c3_3": {
+    "author": "Hitaishi V",
+    "comment": "Backup logs contain only a lab id, a local backup path and a byte count; they go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T14:21:24Z"
+  },
+  "ac004a26a3c53c72e9785849243f884d_0": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:30:42Z"
+  },
+  "ac004a26a3c53c72e9785849243f884d_1": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:30:43Z"
+  },
+  "ac004a26a3c53c72e9785849243f884d_2": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:30:43Z"
+  },
+  "ac004a26a3c53c72e9785849243f884d_3": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:30:43Z"
+  },
+  "f8d0d60af9f28d8543d8d9dc164fb893_0": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:30:42Z"
+  },
+  "f8d0d60af9f28d8543d8d9dc164fb893_1": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:30:42Z"
+  },
+  "f8d0d60af9f28d8543d8d9dc164fb893_2": {
+    "author": "Hitaishi V",
+    "comment": "Server logs go through src/server/lib/log.ts, which redacts URL credentials and token/password/secret key-value pairs before writing and masks user emails. Password-reset links are only printed when LOG_RESET_LINKS=1. Reviewed: no secret reaches stdout.",
+    "false_positive": true,
+    "ignored_at": "2026-10-20T13:54:23Z"
+  }
+}

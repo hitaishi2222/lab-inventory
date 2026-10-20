@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, basename, join } from 'node:path'
+import { log } from '../lib/log'
 
 /**
  * Multi-lab configuration.
@@ -57,9 +58,9 @@ function parseEnvLabs(): LabConfig[] {
         return true
       })
       if (deduped.length > 0) return deduped
-      console.warn('LAB_DATABASES parsed but contained no usable entries — falling back to single-lab mode.')
+      log.warn('LAB_DATABASES parsed but contained no usable entries — falling back to single-lab mode.')
     } catch (err) {
-      console.warn('Could not parse LAB_DATABASES JSON — falling back to single-lab mode:', err)
+      log.warn('Could not parse LAB_DATABASES JSON — falling back to single-lab mode:', err)
     }
   }
 
@@ -134,7 +135,7 @@ function loadRegistryLabs(): LabConfig[] {
     }
     return out
   } catch (err) {
-    console.warn(`Could not read lab registry ${file} — ignoring:`, err)
+    log.warn(`Could not read lab registry ${file} — ignoring:`, err)
     return []
   }
 }

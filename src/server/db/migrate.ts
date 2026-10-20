@@ -1,5 +1,6 @@
 import { getLabDb, allLabIds } from './index'
 import { LABS } from './labs'
+import { log } from '../lib/log'
 import { ensureLabDatabase } from './ensure'
 
 // Applies ./drizzle/*.sql migrations to every configured lab database.
@@ -9,5 +10,7 @@ import { ensureLabDatabase } from './ensure'
 for (const labId of allLabIds()) {
   const lab = LABS.find((l) => l.id === labId)!
   await ensureLabDatabase(getLabDb(labId))
-  console.log(`Migrations applied [${lab.name} → ${lab.url}].`)
+  // log.info redacts credentials/`authToken=` from the connection URL, so a
+  // libsql:// URL with an embedded token can still be logged safely.
+  log.info(`Migrations applied [${lab.name} → ${lab.url}].`)
 }

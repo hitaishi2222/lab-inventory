@@ -363,6 +363,27 @@ export function useCreateUser() {
   })
 }
 
+// --- Dashboard summary ---------------------------------------------------------
+
+export interface DashboardSummary {
+  totalItems: number
+  lowStock: {
+    count: number
+    items: { id: string; name: string; quantity: number; unit: string; minStockThreshold: number }[]
+  }
+  checkedOut: { count: number; items: { id: string; name: string }[] }
+  expiringSoon: { count: number; items: { id: string; name: string; expiryDate: string | null }[] }
+}
+
+/** Counts + short preview lists, computed in SQL (no full-inventory download). */
+export function useDashboardSummary() {
+  return useQuery({
+    queryKey: ['dashboard', 'summary'],
+    queryFn: () => api<DashboardSummary>('/api/dashboard/summary'),
+    staleTime: 30_000,
+  })
+}
+
 // --- Dashboard activity charts -------------------------------------------------
 
 export type ActivityRange = '7d' | '30d' | '90d' | '12m'

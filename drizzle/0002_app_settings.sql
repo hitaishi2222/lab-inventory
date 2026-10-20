@@ -1,4 +1,3 @@
---> statement-breakpoint
 CREATE TABLE `app_settings` (
 	`id` text PRIMARY KEY NOT NULL,
 	`key` text NOT NULL,

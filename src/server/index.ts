@@ -3,10 +3,13 @@ import { cors } from 'hono/cors'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { readFile } from 'node:fs/promises'
+import { pathToFileURL } from 'node:url'
 import { auth } from './auth'
 import { db, labStorage, runWithLab, allLabIds } from './db'
 import { LABS } from './db/labs'
 import { seedDefaultPermissions } from './lib/permissions'
+import { log } from './lib/log'
+import { startBackupScheduler } from './lib/backup'
 import { users } from './db/schema'
 import { eq } from 'drizzle-orm'
 import { itemsRouter } from './routes/items'
@@ -35,6 +38,22 @@ app.use('*', async (c, next) => {
     c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
   }
 })
+
+// Single place where an unexpected throw is turned into a response.
+// Without this Hono answers with a bare text 500: the browser shows nothing
+// useful and the server logs nothing, so a failing route is invisible until a
+// user reports it. Malformed JSON bodies (c.req.json()) become a 400 instead
+// of a 500, since that is a client mistake, not a server fault.
+app.onError((err, c) => {
+  if (err instanceof SyntaxError) {
+    return c.json({ error: 'Invalid JSON body' }, 400)
+  }
+  log.error(`Unhandled ${c.req.method} ${c.req.path}:`, err)
+  return c.json({ error: 'Internal server error' }, 500)
+})
+
+// Liveness probe — used by the Docker healthcheck and handy from a shell.
+app.get('/api/health', (c) => c.json({ ok: true }))
 
 // CORS must allow credentials: better-auth authenticates via httpOnly
 // cookies, and browsers reject `Access-Control-Allow-Origin: *` on any
@@ -150,19 +169,27 @@ app.use('/*', serveStatic({ root: './dist' }))
 
 // SPA fallback: unknown non-API routes get index.html so React Router works.
 // Unknown /api/* routes get a JSON 404 instead.
+//
+// The HTML is cached after the first successful read: in production ./dist is
+// baked into the image and never changes at runtime, so re-reading it from disk
+// on every navigation (and crashing nothing when it is absent) is pure waste.
+let indexHtml: string | null = null
+
 app.get('*', async (c) => {
   if (c.req.path.startsWith('/api/')) {
     return c.json({ error: 'Not found' }, 404)
   }
-  try {
-    const html = await readFile('./dist/index.html', 'utf-8')
-    return c.html(html)
-  } catch {
-    return c.json(
-      { error: 'Frontend not built — run `npm run dev:client` for dev or `npm run build` for prod' },
-      404,
-    )
+  if (indexHtml === null) {
+    try {
+      indexHtml = await readFile('./dist/index.html', 'utf-8')
+    } catch {
+      return c.json(
+        { error: 'Frontend not built — run `npm run dev:client` for dev or `npm run build` for prod' },
+        404,
+      )
+    }
   }
+  return c.html(indexHtml)
 })
 
 // Ensure every lab has the current default permissions (idempotent,
@@ -170,18 +197,22 @@ app.get('*', async (c) => {
 // introduced permissions such as `labs:manage` after an update.
 for (const labId of allLabIds()) {
   await runWithLab(labId, () => seedDefaultPermissions()).catch((err) =>
-    console.warn(`Permission ensure failed [lab: ${labId}]:`, err),
+    log.warn(`Permission ensure failed [lab: ${labId}]:`, err),
   )
 }
 
 const port = Number(process.env.PORT || 3000)
 
-// Only listen when run directly (`npm run dev:server` / `npm start`),
-// so importing this module (e.g. in tests) doesn't open a port.
-if (process.argv[1]?.endsWith('src/server/index.ts') || process.argv[1]?.endsWith('dist/server/index.js')) {
+// Only listen when run directly (`npm run dev:server`, `npm start`, or the
+// bundled `node dist-server/index.js` in the container), so importing this
+// module (e.g. in tests) doesn't open a port.
+const entry = process.argv[1]
+if (entry && import.meta.url === pathToFileURL(entry).href) {
   serve({ fetch: app.fetch, port }, (info) => {
-    console.log(`API + static server listening on http://localhost:${info.port}`)
+    log.info(`API + static server listening on http://localhost:${info.port}`)
   })
+  // Backups run in this process — no sidecar container, no second image.
+  startBackupScheduler()
 }
 
 export default app

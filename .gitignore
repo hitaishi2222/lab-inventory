@@ -15,3 +15,6 @@ screenshots/
 .mcp.json
 # local databases
 *.db
+
+# compiled server bundles (npm run build:server)
+dist-server

@@ -19,7 +19,9 @@
     "build:server": "node scripts/build-server.mjs",
     "build:all": "npm run build && npm run build:server",
     "docs:diagram": "node scripts/render-architecture.mjs",
-    "start:prod": "node dist-server/index.js"
+    "start:prod": "node dist-server/index.js",
+    "dev:worker": "npx wrangler dev",
+    "deploy:worker": "npm run build && npx wrangler deploy"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

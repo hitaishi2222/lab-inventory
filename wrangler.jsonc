@@ -1,0 +1,31 @@
+{
+  // Cloudflare Workers deployment of the same app. Docker stays the default:
+  // `docker compose up` uses src/server/index.ts and never reads this file.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lab-inventory",
+  "main": "src/server/entry-worker.ts",
+  // Bump when you want newer runtime behaviour; keep it a deployed-past date.
+  "compatibility_date": "2025-09-01",
+  // Required: src/server/db uses node:async_hooks (AsyncLocalStorage) and
+  // node:path. node:fs is NEVER imported from the Worker tree — it lives in
+  // index.ts / labs-fs.ts, which only the Docker entry point pulls in.
+  "compatibility_flags": ["nodejs_compat"],
+  // `npm run build` first: the assets binding serves ./dist and answers
+  // unknown paths with index.html (React Router SPA fallback), replacing
+  // serveStatic() from the Node entry.
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": { "enabled": true },
+  // Secrets (wrangler secret put): DATABASE_URL, DATABASE_AUTH_TOKEN,
+  // BETTER_AUTH_SECRET, BETTER_AUTH_URL. DATABASE_URL must be a remote
+  // libsql:// (Turso) URL — `file:` does not exist in a Worker.
+  "vars": {
+    "BETTER_AUTH_URL": "https://labs.example.com"
+  }
+  // Multi-lab on Workers: set LAB_DATABASES to a JSON array of
+  // [{ "id", "name", "url", "token" }] — one Turso database per lab.
+  // Admin-UI lab creation is Docker-only (it writes labs.json).
+}

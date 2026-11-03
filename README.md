@@ -149,6 +149,31 @@ dependencies removed.
 sudo chown -R 1000:1000 ./data ./backups
 ```
 
+### Same code on Cloudflare Workers (optional)
+
+The app is one Hono app plus two thin entry points — nothing is duplicated:
+
+| | Entry point | Uses |
+|---|---|---|
+| Docker / Node | `src/server/index.ts` | `.env`, `serve()`, `./dist` on disk, `labs.json`, in-process backups |
+| Workers | `src/server/entry-worker.ts` | Worker `env` bindings, the `assets` binding, remote libSQL |
+| shared | `src/server/app.ts` | every route, middleware and query |
+
+```bash
+npm run build   # ./dist for the assets binding
+npx wrangler secret put DATABASE_URL        # libsql://<db>-<org>.turso.io
+npx wrangler secret put DATABASE_AUTH_TOKEN
+npx wrangler secret put BETTER_AUTH_SECRET
+npm run deploy:worker
+```
+
+`DATABASE_URL` must point at a remote libSQL database (Turso speaks the same
+protocol the app already uses) — `file:` databases do not exist in a Worker, and
+the filesystem is ephemeral, so there is no volume to mount. Admin-UI lab
+creation is Docker-only (it writes `labs.json`); on Workers use `LAB_DATABASES`
+with one Turso database per lab. Backups are Docker-only — Turso keeps its own
+point-in-time restore.
+
 ## Two or more labs in one instance
 
 A lab is a database file. One process can serve several of them without sharing a

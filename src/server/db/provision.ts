@@ -26,7 +26,7 @@ export async function provisionLab(name: string, creatorEmail: string): Promise<
   if (!sourceLabId) throw new Error('No source lab in context.')
   const sourceDb = getLabDb(sourceLabId)
 
-  const lab = addRegistryLab(name)
+  const lab = await addRegistryLab(name)
   const labDb = registerLabDb(lab)
   await ensureLabDatabase(labDb)
 

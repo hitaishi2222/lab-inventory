@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, basename, join } from 'node:path'
+import { env } from '../env'
+import { dirname, join } from 'node:path'
 import { log } from '../lib/log'
 
 /**
@@ -28,6 +28,8 @@ export interface LabConfig {
   id: string
   name: string
   url: string
+  /** libSQL auth token (Turso). Omitted for local `file:` databases. */
+  token?: string
 }
 
 function slug(s: string): string {
@@ -40,16 +42,17 @@ function slug(s: string): string {
 }
 
 function parseEnvLabs(): LabConfig[] {
-  const raw = process.env.LAB_DATABASES?.trim()
+  const raw = env.LAB_DATABASES?.trim()
   if (raw) {
     try {
-      const arr = JSON.parse(raw) as Array<{ id?: string; name?: string; url?: string }>
+      const arr = JSON.parse(raw) as Array<{ id?: string; name?: string; url?: string; token?: string }>
       const labs = arr
         .filter((l) => l && typeof l.url === 'string' && l.url.length > 0)
         .map((l, i) => ({
           id: slug(l.id || l.name || `lab-${i + 1}`) || `lab-${i + 1}`,
           name: (l.name || `Lab ${i + 1}`).trim().slice(0, 80),
           url: (l.url as string).trim(),
+          token: typeof l.token === 'string' && l.token.trim() ? l.token.trim() : undefined,
         }))
       const seen = new Set<string>()
       const deduped = labs.filter((l) => {
@@ -64,19 +67,22 @@ function parseEnvLabs(): LabConfig[] {
     }
   }
 
-  const primary = process.env.DATABASE_URL || 'file:./data/lab.db'
-  const second = process.env.LAB2_DATABASE_URL?.trim()
+  const primary = env.DATABASE_URL || 'file:./data/lab.db'
+  const token = env.DATABASE_AUTH_TOKEN?.trim() || undefined
+  const second = env.LAB2_DATABASE_URL?.trim()
   if (second) {
     return [
       {
-        id: slug(process.env.LAB1_ID || process.env.LAB1_NAME || 'lab-1') || 'lab-1',
-        name: (process.env.LAB1_NAME || 'Lab 1').trim().slice(0, 80),
+        id: slug(env.LAB1_ID || env.LAB1_NAME || 'lab-1') || 'lab-1',
+        name: (env.LAB1_NAME || 'Lab 1').trim().slice(0, 80),
         url: primary,
+        token,
       },
       {
-        id: slug(process.env.LAB2_ID || process.env.LAB2_NAME || 'lab-2') || 'lab-2',
-        name: (process.env.LAB2_NAME || 'Lab 2').trim().slice(0, 80),
+        id: slug(env.LAB2_ID || env.LAB2_NAME || 'lab-2') || 'lab-2',
+        name: (env.LAB2_NAME || 'Lab 2').trim().slice(0, 80),
         url: second,
+        token: env.LAB2_DATABASE_AUTH_TOKEN?.trim() || token,
       },
     ]
   }
@@ -84,28 +90,29 @@ function parseEnvLabs(): LabConfig[] {
   return [
     {
       id: 'lab',
-      name: (process.env.LAB1_NAME || 'Lab').trim().slice(0, 80),
+      name: (env.LAB1_NAME || 'Lab').trim().slice(0, 80),
       url: primary,
+      token,
     },
   ]
 }
 
 /** Directory that holds the database files (derived from the primary DB). */
 export function labsDataDir(): string {
-  const primary = process.env.DATABASE_URL || 'file:./data/lab.db'
+  const primary = env.DATABASE_URL || 'file:./data/lab.db'
   if (primary.startsWith('file:')) {
     const path = primary.slice('file:'.length).split('?')[0]
     const dir = dirname(path)
     if (dir && dir !== '.') return dir
   }
-  return process.env.LAB_DATA_DIR || './data'
+  return env.LAB_DATA_DIR || './data'
 }
 
 export function labRegistryFile(): string {
-  return process.env.LAB_REGISTRY_FILE || join(labsDataDir(), 'labs.json')
+  return env.LAB_REGISTRY_FILE || join(labsDataDir(), 'labs.json')
 }
 
-interface RegistryLab {
+export interface RegistryLab {
   id: string
   name: string
   /** Database filename inside the data dir (never a path — no traversal). */
@@ -113,39 +120,67 @@ interface RegistryLab {
 }
 
 function isSafeFile(file: string): boolean {
-  return /^[a-z0-9][a-z0-9-]{0,38}\.db$/.test(file) && basename(file) === file
+  return /^[a-z0-9][a-z0-9-]{0,38}\.db$/.test(file) && !file.includes('/') && !file.includes('\\')
 }
 
-function loadRegistryLabs(): LabConfig[] {
-  const file = labRegistryFile()
-  if (!existsSync(file)) return []
-  try {
-    const parsed = JSON.parse(readFileSync(file, 'utf-8')) as { labs?: RegistryLab[] }
-    if (!Array.isArray(parsed.labs)) return []
+/**
+ * Where Admin-created labs are remembered between restarts.
+ *
+ * Node/Docker: `labs.json` next to the database files (see labs-fs.ts).
+ * Workers: nothing — dynamic labs need a database per lab, and a Worker has
+ * nowhere to write the registry, so it reads an empty list and refuses writes.
+ */
+export interface LabRegistryStore {
+  read(): Promise<RegistryLab[]>
+  write(labs: RegistryLab[]): Promise<void>
+}
+
+let store: LabRegistryStore = {
+  read: async () => [],
+  write: async () => {
+    throw new Error('Creating labs at runtime needs a writable registry — set LAB2_DATABASE_URL instead.')
+  },
+}
+
+/** Installed by the Node entry point (labs-fs.ts). */
+export function setLabStore(next: LabRegistryStore): void {
+  store = next
+  ensurePromise = null
+}
+
+/**
+ * The live lab list: env labs first, then registry (Admin-created) labs.
+ * Seeds from env synchronously so scripts and tests can import this module
+ * and use `LABS` immediately; ensureLabs() appends registry labs at boot.
+ * Mutated in place by addRegistryLab() so a new lab needs no restart.
+ */
+export const LABS: LabConfig[] = parseEnvLabs()
+
+let ensurePromise: Promise<void> | null = null
+
+/** Load persisted labs once. Idempotent; safe to await on every request. */
+export function ensureLabs(): Promise<void> {
+  ensurePromise ??= (async () => {
+    let registry: RegistryLab[]
+    try {
+      registry = await store.read()
+    } catch (err) {
+      log.warn('Could not read the lab registry — using env labs only:', err)
+      return
+    }
     const dir = labsDataDir()
-    const seen = new Set<string>()
-    const out: LabConfig[] = []
-    for (const l of parsed.labs) {
+    const seen = new Set(LABS.map((l) => l.id))
+    for (const l of registry) {
       if (!l || typeof l.id !== 'string' || typeof l.name !== 'string' || typeof l.file !== 'string') continue
       const id = slug(l.id)
       const name = l.name.trim().slice(0, 80)
       if (!id || !name || !isSafeFile(l.file) || seen.has(id)) continue
       seen.add(id)
-      out.push({ id, name, url: `file:${join(dir, l.file)}` })
+      LABS.push({ id, name, url: `file:${join(dir, l.file)}` })
     }
-    return out
-  } catch (err) {
-    log.warn(`Could not read lab registry ${file} — ignoring:`, err)
-    return []
-  }
+  })()
+  return ensurePromise
 }
-
-/**
- * The live lab list: env labs first, then registry (Admin-created) labs.
- * Mutated in place by addRegistryLab() so the running server picks up
- * newly created labs without a restart.
- */
-export const LABS: LabConfig[] = [...parseEnvLabs(), ...loadRegistryLabs()]
 
 export function isMultiLab(): boolean {
   return LABS.length > 1
@@ -162,10 +197,10 @@ export function publicLabList(): Array<{ id: string; name: string }> {
 }
 
 /**
- * Record a new Admin-created lab. Synchronous file update (atomic enough
- * for a single Node process) + in-memory registration. Throws on bad input.
+ * Record a new Admin-created lab: registry write, then in-memory registration.
+ * `file` is derived from the id, so the same call works for any store.
  */
-export function addRegistryLab(name: string): LabConfig {
+export async function addRegistryLab(name: string): Promise<LabConfig> {
   const clean = name.trim().slice(0, 80)
   if (!clean) throw new Error('Lab name is required.')
   let base = slug(clean) || 'lab'
@@ -176,20 +211,8 @@ export function addRegistryLab(name: string): LabConfig {
   const file = `${id}.db`
   if (!isSafeFile(file)) throw new Error('Could not derive a safe database filename.')
 
-  const registryPath = labRegistryFile()
-  mkdirSync(dirname(registryPath), { recursive: true })
-  const current = loadRegistryLabs()
-  const next: { labs: RegistryLab[] } = {
-    labs: [
-      ...current.map((l) => ({
-        id: l.id,
-        name: l.name,
-        file: basename(l.url.split('?')[0].replace(/^file:/, '')),
-      })),
-      { id, name: clean, file },
-    ],
-  }
-  writeFileSync(registryPath, JSON.stringify(next, null, 2) + '\n')
+  const current = await store.read()
+  await store.write([...current, { id, name: clean, file }])
 
   const config: LabConfig = { id, name: clean, url: `file:${join(labsDataDir(), file)}` }
   LABS.push(config)

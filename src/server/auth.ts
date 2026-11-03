@@ -1,3 +1,4 @@
+import { env } from './env'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { username } from 'better-auth/plugins/username'
@@ -23,7 +24,7 @@ function makeAuth(labId: string) {
     // Public base URL of the app (used for reset links, origin checks and
     // deciding secure-cookie mode). In prod behind Cloudflare Tunnel this is
     // https://<your-domain>; in dev it stays http://localhost:3000.
-    baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3000',
+    baseURL: env.BETTER_AUTH_URL || 'http://localhost:3000',
     database: drizzleAdapter(getLabDb(labId), {
       provider: 'sqlite',
       schema: { user, session, account, verification },
@@ -47,8 +48,8 @@ function makeAuth(labId: string) {
         // outside production (dev keeps working with zero configuration).
         // On a deployed instance turn it off and wire a real transporter —
         // otherwise anyone with log access can take over any account.
-        const opted = process.env.LOG_RESET_LINKS
-        const mayLogLink = opted ? /^(1|true|yes)$/i.test(opted) : process.env.NODE_ENV !== 'production'
+        const opted = env.LOG_RESET_LINKS
+        const mayLogLink = opted ? /^(1|true|yes)$/i.test(opted) : env.NODE_ENV !== 'production'
         if (!mayLogLink) {
           log.warn(`Password reset requested [lab: ${labId}] — set LOG_RESET_LINKS=1 to print the link.`)
           return
@@ -64,18 +65,18 @@ function makeAuth(labId: string) {
       // Production URL from the environment (e.g. https://labs.example.com
       // behind Cloudflare Tunnel) must be trusted, otherwise sign-in and
       // password-reset fail with 403 INVALID_ORIGIN / INVALID_REDIRECT_URL.
-      ...(process.env.BETTER_AUTH_URL ? [process.env.BETTER_AUTH_URL] : []),
+      ...(env.BETTER_AUTH_URL ? [env.BETTER_AUTH_URL] : []),
       // Extra origins (comma-separated) for previews / alternate domains.
-      ...(process.env.TRUSTED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? []),
+      ...(env.TRUSTED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? []),
     ],
     advanced: {
       // Cookie management: httpOnly + Lax by default. `Secure` (and the
       // `__Secure-` cookie prefix) only when served over https, so local
       // http dev keeps working while prod cookies can't leak over http.
-      useSecureCookies: (process.env.BETTER_AUTH_URL || '').startsWith('https://'),
+      useSecureCookies: (env.BETTER_AUTH_URL || '').startsWith('https://'),
       defaultCookieAttributes: {
         sameSite: 'lax',
-        secure: (process.env.BETTER_AUTH_URL || '').startsWith('https://'),
+        secure: (env.BETTER_AUTH_URL || '').startsWith('https://'),
         httpOnly: true,
         path: '/',
       },
@@ -133,7 +134,7 @@ for (const lab of LABS) {
 
 function currentAuth(): AuthInstance {
   // SEED_LAB lets scripts target one lab, e.g. `SEED_LAB=lab-2 npm run db:seed`.
-  const id = labStorage.getStore() ?? process.env.SEED_LAB ?? LABS[0].id
+  const id = labStorage.getStore() ?? env.SEED_LAB ?? LABS[0].id
   return getOrCreateAuth(instances.has(id) ? id : LABS[0].id)
 }
 

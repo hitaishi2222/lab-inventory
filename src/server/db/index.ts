@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import { env } from '../env'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { drizzle } from 'drizzle-orm/libsql'
 import { createClient } from '@libsql/client'
@@ -25,7 +25,9 @@ type LabDb = ReturnType<typeof drizzle<typeof schema>>
 const clients = new Map<string, LabDb>()
 
 function createLabDb(lab: LabConfig): LabDb {
-  const client = createClient({ url: lab.url })
+  // `url` is `file:...` on Node and `libsql://...` (Turso) on Workers;
+  // `token` is only sent for the latter.
+  const client = createClient(lab.token ? { url: lab.url, authToken: lab.token } : { url: lab.url })
   const labDb = drizzle(client, { schema })
   clients.set(lab.id, labDb)
   return labDb
@@ -46,7 +48,7 @@ export const labStorage = new AsyncLocalStorage<string>()
 /** Drizzle instance for a specific lab (or the request's lab by default). */
 export function getLabDb(labId?: string): LabDb {
   // SEED_LAB lets scripts target one lab, e.g. `SEED_LAB=lab-2 npm run db:seed`.
-  const wanted = labId ?? labStorage.getStore() ?? process.env.SEED_LAB ?? LABS[0].id
+  const wanted = labId ?? labStorage.getStore() ?? env.SEED_LAB ?? LABS[0].id
   const hit = clients.get(wanted)
   if (hit) return hit
   // Lab known (e.g. added to labs.json while running) but no client yet.

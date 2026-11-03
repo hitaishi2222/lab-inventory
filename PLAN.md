@@ -596,12 +596,33 @@ BETTER_AUTH_SECRET=<generate-with-openssl-rand-base64-32>
 
 ## Future Enhancements (Out of Scope for v1)
 
+Planned, not built. Order is rough priority; nothing here has an issue or a date yet.
+
+**Next up**
+
+- **MCP integration** — expose the inventory as an MCP server so an agent (Claude,
+  Codex, …) can query stock, log usage and check out equipment directly, reusing the
+  existing role/permission checks instead of scraping the REST API. Open design
+  questions: stdio vs HTTP transport, how a client authenticates (per-lab token vs
+  the current session cookie), whether tools are read-only by default.
+- **Custom theming** — a user-defined theme on top of the current light/dark toggle:
+  accent colour, radius and density, persisted per lab so every member sees the same
+  palette. Blocked on nothing; touches `tailwind.config.ts`, the CSS variables in
+  `src/index.css`, and the Settings page.
+
+**Later**
+
 - QR code generation and scanning for items
 - Barcode scanner integration
 - Email notifications (in addition to in-app)
-- Multi-lab support (if the system grows)
-- API for external integrations (e.g., procurement system)
-- Data export to CSV/Excel
+- API keys, so external integrations (e.g. a procurement system) can call the REST
+  API without a browser session
+- Excel export (`.xlsx`) — CSV export already ships for items, usage and audit
 - Supplier tracking and reorder management
 - Equipment maintenance scheduling
 - Chemical waste tracking
+
+**Shipped since this plan was written**
+
+- Multi-lab support: one process, one database per lab, Admin-created labs
+- CSV export (items, usage, audit)

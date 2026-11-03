@@ -1,5 +1,9 @@
 # Labs
 
+> **Alpha (0.1.0-alpha.1).** Working, self-hosted, used daily — but expect the data
+> model and API to still move between releases. [PLAN.md](PLAN.md) lists what is
+> shipped and what is planned.
+
 A self-hosted inventory dashboard for a shared research lab. It keeps one list of
 what the lab owns (chemicals, consumables, instruments), records who used or
 borrowed what, and warns before a chemical expires or a shelf runs empty.

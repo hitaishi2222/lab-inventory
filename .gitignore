@@ -17,3 +17,6 @@ backups
 
 # compiled server bundles (npm run build:server)
 dist-server
+
+# wrangler scratch space (dry-run/bundling)
+.wrangler

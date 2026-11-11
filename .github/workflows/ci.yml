@@ -32,6 +32,13 @@ jobs:
       - name: Build server bundle
         run: npm run build:server
 
+      # The Workers entry point is a second runtime for the same app; bundle it
+      # so a broken import or wrangler.jsonc stops the build here. --dry-run
+      # needs no Cloudflare account, login or secrets. Reads ./dist from the
+      # frontend build above.
+      - name: Build Worker bundle (dry run)
+        run: npx --yes wrangler@4.160.0 deploy --dry-run
+
       - name: Test
         run: npm test
         env:

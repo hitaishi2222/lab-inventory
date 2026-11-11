@@ -1,3 +1,7 @@
+// `.env` is loaded here because these commands run outside dist-server/index.js
+// (which is the only other place dotenv is imported). Real environment
+// variables win: dotenv never overwrites what the shell already set.
+import 'dotenv/config'
 import { getLabDb, allLabIds } from './index'
 import { LABS } from './labs'
 import { log } from '../lib/log'

@@ -163,20 +163,52 @@ The app is one Hono app plus two thin entry points — nothing is duplicated:
 | Workers | `src/server/entry-worker.ts` | Worker `env` bindings, the `assets` binding, remote libSQL |
 | shared | `src/server/app.ts` | every route, middleware and query |
 
-```bash
-npm run build   # ./dist for the assets binding
-npx wrangler secret put DATABASE_URL        # libsql://<db>-<org>.turso.io
-npx wrangler secret put DATABASE_AUTH_TOKEN
-npx wrangler secret put BETTER_AUTH_SECRET
-npm run deploy:worker
-```
+A Worker has no filesystem, so two things differ from Docker: the database is a
+remote libSQL database (Turso speaks the same protocol), and its schema is
+created from your machine, not at boot.
 
-`DATABASE_URL` must point at a remote libSQL database (Turso speaks the same
-protocol the app already uses) — `file:` databases do not exist in a Worker, and
-the filesystem is ephemeral, so there is no volume to mount. Admin-UI lab
-creation is Docker-only (it writes `labs.json`); on Workers use `LAB_DATABASES`
-with one Turso database per lab. Backups are Docker-only — Turso keeps its own
-point-in-time restore.
+1. Create the database and copy its URL and token into `.env`
+   (`DATABASE_URL=libsql://…`, `DATABASE_AUTH_TOKEN=…`), next to a fresh
+   `BETTER_AUTH_SECRET`.
+
+2. Create the schema and the first admin **from your machine**:
+
+   ```bash
+   npm run db:migrate
+   SEED_ADMIN_PASSWORD='pick-one' npm run db:seed
+   ```
+
+   Run this again after every update that adds a migration — the Worker cannot
+   read `./drizzle`, so nothing is applied at runtime and a fresh database has
+   no tables until this step runs.
+
+3. Edit `wrangler.jsonc`: the Worker `name` and `BETTER_AUTH_URL` (its real URL —
+   `https://<worker>.<subdomain>.workers.dev` or your domain). Until the
+   placeholder is replaced the Worker answers 500 with that instruction.
+
+4. Push the values as secrets (`.env` is not read by `wrangler deploy`):
+
+   ```bash
+   npx wrangler secret put DATABASE_URL        # libsql://<db>-<org>.turso.io
+   npx wrangler secret put DATABASE_AUTH_TOKEN
+   npx wrangler secret put BETTER_AUTH_SECRET
+   ```
+
+5. Deploy and open the URL:
+
+   ```bash
+   npm run deploy:worker   # npm run build + wrangler deploy
+   ```
+
+   Sign in as `admin@lab.edu` (or `admin`) with the seed password, then change it.
+
+A wrong or missing `DATABASE_URL` / `BETTER_AUTH_URL` returns a 500 that names the
+variable and the command that sets it, instead of a libSQL stack trace. `file:`
+databases, the `labs.json` registry and in-process backups do not exist in a
+Worker: create labs with `LAB_DATABASES` (one Turso database per lab) and rely on
+Turso's point-in-time restore. `LOG_RESET_LINKS` is pinned to `0` in
+`wrangler.jsonc` because reset links in Cloudflare logs are account takeovers;
+wire a real mailer in `src/server/auth.ts` to make password reset usable.
 
 ## Two or more labs in one instance
 

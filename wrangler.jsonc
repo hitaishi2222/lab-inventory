@@ -20,10 +20,18 @@
   },
   "observability": { "enabled": true },
   // Secrets (wrangler secret put): DATABASE_URL, DATABASE_AUTH_TOKEN,
-  // BETTER_AUTH_SECRET, BETTER_AUTH_URL. DATABASE_URL must be a remote
-  // libsql:// (Turso) URL — `file:` does not exist in a Worker.
+  // BETTER_AUTH_SECRET. DATABASE_URL must be a remote libsql:// (Turso) URL —
+  // `file:` does not exist in a Worker, and the schema has to be created from
+  // your machine first: `npm run db:migrate && npm run db:seed` with the Turso
+  // values in .env (nothing migrates at runtime).
   "vars": {
-    "BETTER_AUTH_URL": "https://labs.example.com"
+    // CHANGE THIS to the Worker's real URL (or set the secret instead) —
+    // logins fail with 403 INVALID_ORIGIN while the placeholder is in place.
+    "BETTER_AUTH_URL": "https://labs.example.com",
+    // There is no mailer: a password-reset link is a single-use credential, so
+    // it must not land in Cloudflare logs. Set to 1 only with a private log
+    // sink you control, or wire a real mailer in src/server/auth.ts.
+    "LOG_RESET_LINKS": "0"
   }
   // Multi-lab on Workers: set LAB_DATABASES to a JSON array of
   // [{ "id", "name", "url", "token" }] — one Turso database per lab.

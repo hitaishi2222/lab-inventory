@@ -9,7 +9,9 @@ import { LABS, getLab, type LabConfig } from './labs'
  * Multi-lab database routing.
  *
  * Each lab gets its own isolated libSQL client + Drizzle instance
- * (separate .db file), created lazily and cached. The rest of the server
+ * (separate .db file), created on first use and cached. Nothing touches the
+ * database at import time: on Workers, a bad DATABASE_URL must still leave the
+ * entry point able to explain what is wrong. The rest of the server
  * keeps importing `{ db }` from here and works unchanged: `db` is a Proxy
  * that forwards every access to the Drizzle instance of the lab attached
  * to the current request.
@@ -31,10 +33,6 @@ function createLabDb(lab: LabConfig): LabDb {
   const labDb = drizzle(client, { schema })
   clients.set(lab.id, labDb)
   return labDb
-}
-
-for (const lab of LABS) {
-  createLabDb(lab)
 }
 
 /** Register a newly created lab's database client (no restart needed). */

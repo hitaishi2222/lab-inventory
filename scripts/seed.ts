@@ -1,3 +1,6 @@
+// Load .env so `npm run db:seed` targets the same database as `npm run dev`
+// (inline env such as `DATABASE_URL=libsql://... npm run db:seed` still wins).
+import 'dotenv/config'
 import { eq } from 'drizzle-orm'
 import { db } from '../src/server/db/index.ts'
 import { users, user as authUser, categories, items, chemicalDetails, equipmentDetails, appSettings } from '../src/server/db/schema.ts'

@@ -128,9 +128,9 @@ function getOrCreateAuth(labId: string): AuthInstance {
   return inst
 }
 
-for (const lab of LABS) {
-  getOrCreateAuth(lab.id)
-}
+// Instances are built on first use, not at import: they open the lab's libSQL
+// client, and a Worker has to be able to answer with a readable configuration
+// error instead of dying during module evaluation.
 
 function currentAuth(): AuthInstance {
   // SEED_LAB lets scripts target one lab, e.g. `SEED_LAB=lab-2 npm run db:seed`.

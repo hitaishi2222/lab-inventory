@@ -1,3 +1,5 @@
+// Load .env so a cron run hits the same database as the server.
+import 'dotenv/config'
 import { generateScheduledNotifications } from '../src/server/lib/notifications.ts'
 
 // Cron-friendly entry point: generates overdue-equipment and expiring-chemical

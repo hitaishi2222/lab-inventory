@@ -32,16 +32,24 @@ jobs:
       - name: Build server bundle
         run: npm run build:server
 
-      # The Workers entry point is a second runtime for the same app; bundle it
-      # so a broken import or wrangler.jsonc stops the build here. --dry-run
-      # needs no Cloudflare account, login or secrets. Reads ./dist from the
-      # frontend build above.
-      - name: Build Worker bundle (dry run)
-        run: npx --yes wrangler@4.160.0 deploy --dry-run
-
       - name: Test
         run: npm test
         env:
           # test/setup.ts overrides these; set here so a stray import fails loudly
           # instead of silently touching ./data/lab.db.
           NODE_ENV: test
+
+      # The Workers entry point is a second runtime for the same app; bundle it
+      # so a broken import or wrangler.jsonc stops the build here. --dry-run
+      # needs no Cloudflare account, login or secrets, and reads ./dist from the
+      # frontend build above.
+      #
+      # Node 22 only for wrangler: 4.x refuses Node 20, while the app itself
+      # (and the Docker image) stays on Node 20 — so the tests above keep
+      # running on the runtime that ships.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build Worker bundle (dry run)
+        run: npx --yes wrangler@4.160.0 deploy --dry-run

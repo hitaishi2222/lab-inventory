@@ -19,11 +19,23 @@
     "not_found_handling": "single-page-application"
   },
   "observability": { "enabled": true },
-  // Secrets (wrangler secret put): DATABASE_URL, DATABASE_AUTH_TOKEN,
-  // BETTER_AUTH_SECRET. DATABASE_URL must be a remote libsql:// (Turso) URL —
-  // `file:` does not exist in a Worker, and the schema has to be created from
-  // your machine first: `npm run db:migrate && npm run db:seed` with the Turso
-  // values in .env (nothing migrates at runtime).
+  // The primary lab's database. A Worker has no filesystem, so the `file:` lab
+  // default is served from this binding (src/server/db/index.ts). Create it once
+  // with `npx wrangler d1 create lab-inventory`, paste the id it prints here, then
+  // apply the schema from your machine: `npm run db:migrate:d1`. Nothing migrates
+  // at runtime. D1 keeps 30 days of point-in-time restore (Time Travel).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lab-inventory",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "./drizzle"
+    }
+  ],
+  // Secrets (wrangler secret put): BETTER_AUTH_SECRET, BETTER_AUTH_URL (this
+  // Worker's own URL — until it is set the Worker answers 500 and says so).
+  // Extra labs beyond the D1-bound primary use DATABASE_URL or LAB_DATABASES,
+  // which must be remote libsql:// (Turso) URLs.
   // Nothing per-deployment lives here: the Worker's own URL, the database and
   // the auth secret are secrets, set once in the dashboard or with
   // `wrangler secret put`. That way a deploy from a fork needs no edit to this

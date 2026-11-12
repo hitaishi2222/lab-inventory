@@ -1,6 +1,8 @@
-import { env } from '../env'
+import { env, getBinding } from '../env'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { drizzle } from 'drizzle-orm/libsql'
+import { drizzle as drizzleD1 } from 'drizzle-orm/d1'
+import type { BatchItem, BatchResponse } from 'drizzle-orm/batch'
 import { createClient } from '@libsql/client'
 import * as schema from './schema'
 import { LABS, getLab, type LabConfig } from './labs'
@@ -20,17 +22,38 @@ import { LABS, getLab, type LabConfig } from './labs'
  * request by the lab-resolution middleware in src/server/index.ts.
  * Outside a request (seed/migrate scripts, auth hooks without context)
  * it falls back to the first (default) lab.
+ *
+ * Two drivers, one surface: libSQL (a file on Node, Turso remotely) and D1
+ * (Cloudflare, no filesystem). Both are SQLite to Drizzle and expose the same
+ * query builders and `batch`, so every route is written once. Driver-specific
+ * DDL and migrations stay out of the request path: Node runs ./drizzle at
+ * boot, D1 is migrated with wrangler.
  */
 
 type LabDb = ReturnType<typeof drizzle<typeof schema>>
 
 const clients = new Map<string, LabDb>()
 
+/**
+ * The D1 binding a `file:` lab is served from, or null on Node.
+ *
+ * A Worker has no filesystem, so the primary lab's `file:` default can only
+ * mean "the D1 database bound as DB" (wrangler.jsonc → d1_databases). Extra
+ * labs on Workers still address their own database by libsql:// URL.
+ */
+function d1BindingFor(lab: LabConfig): unknown | null {
+  if (lab.id !== LABS[0].id || !lab.url.startsWith('file:')) return null
+  return getBinding('DB') ?? null
+}
+
 function createLabDb(lab: LabConfig): LabDb {
-  // `url` is `file:...` on Node and `libsql://...` (Turso) on Workers;
-  // `token` is only sent for the latter.
-  const client = createClient(lab.token ? { url: lab.url, authToken: lab.token } : { url: lab.url })
-  const labDb = drizzle(client, { schema })
+  const d1 = d1BindingFor(lab)
+  // The client argument is typed through @cloudflare/workers-types, which this
+  // repo deliberately does not install (the entry point is plain JS shapes).
+  const labDb = d1
+    ? (drizzleD1(d1 as never, { schema }) as unknown as LabDb)
+    : // `url` is `file:...` on Node and `libsql://...` remotely; `token` only for the latter.
+      drizzle(createClient(lab.token ? { url: lab.url, authToken: lab.token } : { url: lab.url }), { schema })
   clients.set(lab.id, labDb)
   return labDb
 }
@@ -38,6 +61,23 @@ function createLabDb(lab: LabConfig): LabDb {
 /** Register a newly created lab's database client (no restart needed). */
 export function registerLabDb(lab: LabConfig): LabDb {
   return clients.get(lab.id) ?? createLabDb(lab)
+}
+
+/**
+ * Run statements as one all-or-nothing unit, on either driver.
+ *
+ * D1 rejects an interactive `BEGIN`: each statement is its own auto-commit
+ * transaction, and a batch is the only way to get several statements into one.
+ * So every write that must not half-happen is a statement list here, and any
+ * guard has to come from SQL state — a predicate in a WHERE, or an
+ * `INSERT ... SELECT ... WHERE EXISTS (...)`. A statement may rely on what an
+ * earlier statement in the same list *wrote*, never on its returned rows.
+ */
+export function atomic<const T extends BatchItem<'sqlite'>[]>(statements: T): Promise<BatchResponse<T>> {
+  if (statements.length === 0) return Promise.resolve([] as unknown as BatchResponse<T>)
+  return getLabDb().batch(
+    statements as unknown as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]],
+  ) as unknown as Promise<BatchResponse<T>>
 }
 
 /** Async context holding the current request's lab id. */

@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { eq, desc, sql, and, gte } from 'drizzle-orm'
-import { db } from '../db'
+import { eq, desc, sql, and, gte, exists } from 'drizzle-orm'
+import { db, atomic } from '../db'
 import { equipmentCheckouts, equipmentDetails, equipmentReservations, items, users } from '../db/schema'
 import { requireAuth, requirePermission } from '../middleware/auth'
 import { logAudit } from '../lib/audit'
@@ -102,31 +102,26 @@ equipmentRouter.post(
   }
 
   // Claim the equipment atomically. The status check above is only for a nice
-  // error message; the UPDATE below is the real guard, so two people clicking
-  // "check out" at the same time cannot both end up with an ACTIVE checkout of
-  // the same instrument (the second finds no AVAILABLE row and gets a 409).
+  // error message; the statements below are the real guard, so two people
+  // clicking "check out" at the same time cannot both end up with an ACTIVE
+  // checkout of the same instrument. The insert only produces a row while the
+  // item is still AVAILABLE, the update then flips it — and the update returning
+  // no rows means the insert was skipped too, so nothing was written.
   const checkoutId = crypto.randomUUID()
-  const claimed = await db.transaction(async (tx) => {
-    const rows = await tx
-      .update(equipmentDetails)
+  const [, claimed] = await atomic([
+    db.insert(equipmentCheckouts).select(sql`
+      SELECT ${checkoutId}, ${id}, ${user.id}, datetime('now'),
+             ${parsed.data.expectedReturnAt ?? null}, NULL, ${parsed.data.notes ?? null}, 'ACTIVE'
+      FROM equipment_details
+      WHERE item_id = ${id} AND status = 'AVAILABLE'
+    `),
+    db.update(equipmentDetails)
       .set({ status: 'CHECKED_OUT' })
       .where(and(eq(equipmentDetails.itemId, id), eq(equipmentDetails.status, 'AVAILABLE')))
-      .returning({ id: equipmentDetails.id })
+      .returning({ id: equipmentDetails.id }),
+  ])
 
-    if (rows.length === 0) return false
-
-    await tx.insert(equipmentCheckouts).values({
-      id: checkoutId,
-      itemId: id,
-      userId: user.id,
-      expectedReturnAt: parsed.data.expectedReturnAt,
-      notes: parsed.data.notes,
-      status: 'ACTIVE',
-    })
-    return true
-  })
-
-  if (!claimed) return c.json({ error: 'Already checked out' }, 409)
+  if (claimed.length === 0) return c.json({ error: 'Already checked out' }, 409)
 
   await logAudit({ userId: user.id, action: 'CHECKOUT', entityType: 'Equipment', entityId: id, details: { ...parsed.data, itemName: (await db.select({ name: items.name }).from(items).where(eq(items.id, id)).get())?.name } })
 
@@ -146,20 +141,24 @@ equipmentRouter.post(
   // ACTIVE checkout must exist. Otherwise a stray POST (or a double click on a
   // slow connection) would mark someone else's checkout RETURNED or clear an
   // item that was never out.
-  const returned = await db.transaction(async (tx) => {
-    const rows = await tx
-      .update(equipmentCheckouts)
+  const returned = await atomic([
+    // Guarded on the pre-state (there IS an ACTIVE checkout), so it runs before
+    // the return below flips it — and touches nothing when the return is a no-op.
+    db.update(equipmentDetails)
+      .set({ status: 'AVAILABLE' })
+      .where(and(
+        eq(equipmentDetails.itemId, id),
+        exists(db.select({ one: sql`1` }).from(equipmentCheckouts).where(
+          and(eq(equipmentCheckouts.itemId, id), eq(equipmentCheckouts.status, 'ACTIVE')),
+        )),
+      )),
+    db.update(equipmentCheckouts)
       .set({ returnedAt: sql`(datetime('now'))`, status: 'RETURNED' })
       .where(and(eq(equipmentCheckouts.itemId, id), eq(equipmentCheckouts.status, 'ACTIVE')))
-      .returning({ id: equipmentCheckouts.id })
+      .returning({ id: equipmentCheckouts.id }),
+  ])
 
-    if (rows.length === 0) return false
-
-    await tx.update(equipmentDetails).set({ status: 'AVAILABLE' }).where(eq(equipmentDetails.itemId, id))
-    return true
-  })
-
-  if (!returned) return c.json({ error: 'This equipment is not checked out.' }, 409)
+  if (returned[1].length === 0) return c.json({ error: 'This equipment is not checked out.' }, 409)
 
   await logAudit({ userId: user.id, action: 'RETURN', entityType: 'Equipment', entityId: id })
 

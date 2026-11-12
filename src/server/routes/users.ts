@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { count, eq } from 'drizzle-orm'
 import { verifyPassword } from 'better-auth/crypto'
-import { db } from '../db'
+import { db, atomic } from '../db'
 import { users, user as authUser, account as authAccount } from '../db/schema'
 import { auth } from '../auth'
 import { requireAuth, requirePermission } from '../middleware/auth'
@@ -275,13 +275,13 @@ usersRouter.delete(
   // Remove the app profile first, then the better-auth identity (its sessions
   // and accounts cascade via FK). Otherwise the orphaned auth account keeps its
   // sessions alive and the email can never be re-registered. Both rows go in one
-  // transaction: a half-deleted account is worse than no deletion at all.
+  // batch: a half-deleted account is worse than no deletion at all.
   // History rows (audit, usage, checkouts, reservations) now survive with
   // user_id NULL — see drizzle/0006_user_fk_set_null.sql.
-  await db.transaction(async (tx) => {
-    await tx.delete(users).where(eq(users.id, id))
-    await tx.delete(authUser).where(eq(authUser.email, target.email))
-  })
+  await atomic([
+    db.delete(users).where(eq(users.id, id)),
+    db.delete(authUser).where(eq(authUser.email, target.email)),
+  ])
 
   await logAudit({
     userId: me.id,

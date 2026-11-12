@@ -160,43 +160,55 @@ The app is one Hono app plus two thin entry points — nothing is duplicated:
 | | Entry point | Uses |
 |---|---|---|
 | Docker / Node | `src/server/index.ts` | `.env`, `serve()`, `./dist` on disk, `labs.json`, in-process backups |
-| Workers | `src/server/entry-worker.ts` | Worker `env` bindings, the `assets` binding, remote libSQL |
+| Workers | `src/server/entry-worker.ts` | Worker `env` bindings, the `assets` binding, D1 |
 | shared | `src/server/app.ts` | every route, middleware and query |
 
-A Worker has no filesystem, so two things differ from Docker: the database is a
-remote libSQL database (Turso speaks the same protocol), and its schema is
-created from your machine, not at boot.
+A Worker has no filesystem, so two things differ from Docker: the primary lab's
+database is the **D1** database bound as `DB` (the `file:` default means "the
+binding"), and its schema is created from your machine, not at boot. Cloudflare
+gives D1 30 days of point-in-time restore (Time Travel) for free, which replaces
+the in-process backups that only exist under Docker.
 
-1. Create the database and copy its URL and token into `.env`
-   (`DATABASE_URL=libsql://…`, `DATABASE_AUTH_TOKEN=…`), next to a fresh
-   `BETTER_AUTH_SECRET`.
-
-2. Create the schema and the first admin **from your machine**:
+1. Create the database, then paste the id it prints into `wrangler.jsonc`
+   (`d1_databases[0].database_id`):
 
    ```bash
-   npm run db:migrate
-   SEED_ADMIN_PASSWORD='pick-one' npm run db:seed
+   npx wrangler d1 create lab-inventory
    ```
 
-   Run this again after every update that adds a migration — the Worker cannot
-   read `./drizzle`, so nothing is applied at runtime and a fresh database has
-   no tables until this step runs.
-
-3. Set the Worker's own public URL as a secret — its real URL, either
-   `https://<worker>.<subdomain>.workers.dev` or the custom domain. This is the
-   only value that differs per deployment, so it stays out of the repo: the
-   same commit deploys to any account unedited. Until it is set the Worker
-   answers 500 with that instruction.
-
-4. Push the values as secrets (`.env` is not read by `wrangler deploy`, and
-   Dashboard → Settings → Variables and Secrets works without the CLI):
+2. Create the schema **from your machine**:
 
    ```bash
-   npx wrangler secret put DATABASE_URL        # libsql://<db>-<org>.turso.io
-   npx wrangler secret put DATABASE_AUTH_TOKEN
-   npx wrangler secret put BETTER_AUTH_SECRET
+   npm run db:migrate:d1        # wrangler d1 migrations apply lab-inventory --remote
+   ```
+
+   Drizzle's migrations in `./drizzle` are the source; wrangler tracks what it
+   applied in its own table. The Worker cannot read that folder, so nothing is
+   applied at runtime — run this again after any update that adds a migration.
+
+3. Put the same seed data in it that you get locally (permissions, categories,
+   the first admin):
+
+   ```bash
+   SEED_ADMIN_PASSWORD='pick-one' npm run db:seed:d1
+   ```
+
+   This builds the database in a throwaway SQLite file, because hashing the
+   password needs Node, and replays it into D1. Add `D1_LOCAL=1` to target the
+   local miniflare database instead, and `D1_DEBUG=1` to keep the generated SQL.
+
+4. Two secrets — the Worker's own public URL, and the auth secret. Neither is in
+   the repo: the same commit deploys to any account unedited. Until
+   `BETTER_AUTH_URL` is set the Worker answers 500 with that instruction.
+
+   ```bash
    npx wrangler secret put BETTER_AUTH_URL    # https://labs.yourdomain.com
+   npx wrangler secret put BETTER_AUTH_SECRET # openssl rand -base64 32
    ```
+
+   Dashboard → Settings → Variables and Secrets does the same without a CLI, as
+   long as the type is **Secret** (plain-text vars are overwritten by the next
+   build).
 
 5. Deploy and open the URL:
 
@@ -206,13 +218,18 @@ created from your machine, not at boot.
 
    Sign in as `admin@lab.edu` (or `admin`) with the seed password, then change it.
 
-A wrong or missing `DATABASE_URL` / `BETTER_AUTH_URL` returns a 500 that names the
-variable and the command that sets it, instead of a libSQL stack trace. `file:`
-databases, the `labs.json` registry and in-process backups do not exist in a
-Worker: create labs with `LAB_DATABASES` (one Turso database per lab) and rely on
-Turso's point-in-time restore. `LOG_RESET_LINKS` is pinned to `0` in
-`wrangler.jsonc` because reset links in Cloudflare logs are account takeovers;
-wire a real mailer in `src/server/auth.ts` to make password reset usable.
+`file:` databases, the `labs.json` registry and in-process backups do not exist
+in a Worker: extra labs use `LAB_DATABASES` with one remote `libsql://` URL per
+lab (Turso), and D1 is the database for the primary one. `LOG_RESET_LINKS` is
+pinned to `0` in `wrangler.jsonc` because reset links in Cloudflare logs are
+account takeovers; wire a real mailer in `src/server/auth.ts` to make password
+reset usable.
+
+Nothing in the app writes `BEGIN`: writes that must not half-happen go through
+`atomic()` in `src/server/db/index.ts`, which is a statement list on both
+drivers because D1 has no interactive transactions. Guards therefore live in SQL
+(a `WHERE` predicate, or `INSERT … SELECT … WHERE EXISTS (…)`), never in the
+result of an earlier statement in the same list.
 
 ## Two or more labs in one instance
 

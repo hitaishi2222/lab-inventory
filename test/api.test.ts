@@ -159,6 +159,19 @@ describe('items list', () => {
     const res = await call('PUT', '/api/items/does-not-exist', { name: 'ghost' })
     expect(res.status).toBe(404)
   })
+
+  it('creates, then updates, a detail row in place instead of duplicating it', async () => {
+    const itemId = await createItem({ name: 'Acetone', chemical: { casNumber: '67-64-1' } })
+
+    // Second write hits the same unique item_id: an upsert, since a statement
+    // list cannot read first and branch (D1 has no interactive transactions).
+    const updated = await call('PUT', `/api/items/${itemId}`, { chemical: { casNumber: '67-64-2' } })
+    expect(updated.status, updated.text).toBe(200)
+
+    const read = await call('GET', `/api/items/${itemId}`)
+    expect(read.json.chemical.casNumber).toBe('67-64-2')
+    expect(read.json.chemical.itemId).toBe(itemId)
+  })
 })
 
 describe('stock and checkouts', () => {

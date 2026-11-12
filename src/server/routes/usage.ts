@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { eq, desc, sql, and, count } from 'drizzle-orm'
-import { db } from '../db'
+import { db, atomic } from '../db'
 import { usageLogs, items, equipmentDetails } from '../db/schema'
 import { requireAuth, requirePermission } from '../middleware/auth'
 import { logAudit } from '../lib/audit'
@@ -39,38 +39,31 @@ usageRouter.post(
     return c.json({ error: 'Cannot log consumable usage for equipment. Use check-out / return instead.' }, 400)
   }
 
-  // Atomic decrement: the guard lives in the UPDATE, so two people logging
-  // usage at the same moment can no longer both read the same quantity, and
-  // stock cannot silently go negative. `returning` tells us whether the guard
-  // matched without a second read.
+  // Atomic decrement: the guard lives in both statements, so two people logging
+  // usage at the same moment cannot both pass it, and stock cannot silently go
+  // negative. The log row is an INSERT ... SELECT that only produces a row when
+  // stock allows it; the UPDATE returns the new quantity, and no rows there is
+  // the 409 (nothing was written: a batch is one transaction).
   const logId = crypto.randomUUID()
-  const updated = await db.transaction(async (tx) => {
-    const rows = await tx
-      .update(items)
+  const [, updated] = await atomic([
+    db.insert(usageLogs).select(sql`
+      SELECT ${logId}, ${item.id}, ${user.id}, ${parsed.data.quantityUsed},
+             datetime('now'), ${parsed.data.notes ?? null}, datetime('now')
+      FROM items WHERE id = ${item.id} AND quantity >= ${parsed.data.quantityUsed}
+    `),
+    db.update(items)
       .set({ quantity: sql`${items.quantity} - ${parsed.data.quantityUsed}`, updatedAt: sql`(datetime('now'))` })
       .where(and(eq(items.id, item.id), sql`${items.quantity} >= ${parsed.data.quantityUsed}`))
-      .returning({ quantity: items.quantity })
+      .returning({ quantity: items.quantity }),
+  ])
 
-    if (rows.length === 0) return null
-
-    await tx.insert(usageLogs).values({
-      id: logId,
-      itemId: item.id,
-      userId: user.id,
-      quantityUsed: parsed.data.quantityUsed,
-      notes: parsed.data.notes,
-    })
-
-    return rows[0].quantity
-  })
-
-  if (updated === null) {
+  if (updated.length === 0) {
     return c.json(
       { error: `Not enough stock: ${item.quantity} ${item.unit} available, ${parsed.data.quantityUsed} requested.` },
       409,
     )
   }
-  const newQty = updated
+  const newQty = updated[0].quantity
 
   if (newQty <= item.minStockThreshold) {
     await createNotification({

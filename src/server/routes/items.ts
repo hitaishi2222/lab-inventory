@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { eq, desc, like, or, sql, inArray, count } from 'drizzle-orm'
-import { db } from '../db'
+import { db, atomic } from '../db'
 import {
   items,
   chemicalDetails,
@@ -121,11 +121,11 @@ itemsRouter.post(
   const id = crypto.randomUUID()
   const user = c.get('user') as { id: string }
 
-  // One transaction: an item plus its chemical/equipment detail rows are a
-  // single logical record. A failure halfway through used to leave an item
-  // with no details (or details pointing at nothing).
-  await db.transaction(async (tx) => {
-    await tx.insert(items).values({
+  // One batch: an item plus its chemical/equipment detail rows are a single
+  // logical record. A failure halfway through used to leave an item with no
+  // details (or details pointing at nothing).
+  await atomic([
+    db.insert(items).values({
       id,
       name: parsed.data.name,
       categoryId: parsed.data.categoryId,
@@ -134,24 +134,16 @@ itemsRouter.post(
       quantity: parsed.data.quantity,
       unit: parsed.data.unit,
       minStockThreshold: parsed.data.minStockThreshold,
-    })
+    }),
 
-    if (parsed.data.chemical) {
-      await tx.insert(chemicalDetails).values({
-        id: crypto.randomUUID(),
-        itemId: id,
-        ...parsed.data.chemical,
-      })
-    }
+    ...(parsed.data.chemical
+      ? [db.insert(chemicalDetails).values({ id: crypto.randomUUID(), itemId: id, ...parsed.data.chemical })]
+      : []),
 
-    if (parsed.data.equipment) {
-      await tx.insert(equipmentDetails).values({
-        id: crypto.randomUUID(),
-        itemId: id,
-        ...parsed.data.equipment,
-      })
-    }
-  })
+    ...(parsed.data.equipment
+      ? [db.insert(equipmentDetails).values({ id: crypto.randomUUID(), itemId: id, ...parsed.data.equipment })]
+      : []),
+  ])
 
   await logAudit({ userId: user.id, action: 'CREATE', entityType: 'Item', entityId: id, details: { name: parsed.data.name } })
 
@@ -215,32 +207,27 @@ itemsRouter.put(
   const equipment = parsed.data.equipment
 
   // Item + details move together, so a failed detail write cannot leave the
-  // row half-updated.
-  await db.transaction(async (tx) => {
-    if (Object.keys(base).length > 0) {
-      await tx.update(items).set({ ...base, updatedAt: sql`(datetime('now'))` }).where(eq(items.id, id))
-    }
+  // row half-updated. item_id is unique on both detail tables, so an upsert
+  // replaces the old read-then-write pair — which a statement list cannot do.
+  await atomic([
+    ...(Object.keys(base).length > 0
+      ? [db.update(items).set({ ...base, updatedAt: sql`(datetime('now'))` }).where(eq(items.id, id))]
+      : []),
 
-    if (chemical) {
-      const existing = await tx.select({ id: chemicalDetails.id }).from(chemicalDetails)
-        .where(eq(chemicalDetails.itemId, id)).get()
-      if (existing) {
-        await tx.update(chemicalDetails).set(chemical).where(eq(chemicalDetails.itemId, id))
-      } else {
-        await tx.insert(chemicalDetails).values({ id: crypto.randomUUID(), itemId: id, ...chemical })
-      }
-    }
+    ...(chemical
+      ? [db
+          .insert(chemicalDetails)
+          .values({ id: crypto.randomUUID(), itemId: id, ...chemical })
+          .onConflictDoUpdate({ target: chemicalDetails.itemId, set: chemical })]
+      : []),
 
-    if (equipment) {
-      const existing = await tx.select({ id: equipmentDetails.id }).from(equipmentDetails)
-        .where(eq(equipmentDetails.itemId, id)).get()
-      if (existing) {
-        await tx.update(equipmentDetails).set(equipment).where(eq(equipmentDetails.itemId, id))
-      } else {
-        await tx.insert(equipmentDetails).values({ id: crypto.randomUUID(), itemId: id, ...equipment })
-      }
-    }
-  })
+    ...(equipment
+      ? [db
+          .insert(equipmentDetails)
+          .values({ id: crypto.randomUUID(), itemId: id, ...equipment })
+          .onConflictDoUpdate({ target: equipmentDetails.itemId, set: equipment })]
+      : []),
+  ])
 
   await logAudit({ userId: user.id, action: 'UPDATE', entityType: 'Item', entityId: id, details: body })
 
@@ -298,14 +285,14 @@ itemsRouter.delete(
   // Hard delete: remove child rows first (no DB-level cascades). Reservations
   // are part of that set — libsql runs with foreign_keys=1, so a booking that
   // outlives its item turns the delete into a 500 instead of a cleanup.
-  await db.transaction(async (tx) => {
-    await tx.delete(chemicalDetails).where(eq(chemicalDetails.itemId, id))
-    await tx.delete(equipmentDetails).where(eq(equipmentDetails.itemId, id))
-    await tx.delete(equipmentReservations).where(eq(equipmentReservations.itemId, id))
-    await tx.delete(equipmentCheckouts).where(eq(equipmentCheckouts.itemId, id))
-    await tx.delete(usageLogs).where(eq(usageLogs.itemId, id))
-    await tx.delete(items).where(eq(items.id, id))
-  })
+  await atomic([
+    db.delete(chemicalDetails).where(eq(chemicalDetails.itemId, id)),
+    db.delete(equipmentDetails).where(eq(equipmentDetails.itemId, id)),
+    db.delete(equipmentReservations).where(eq(equipmentReservations.itemId, id)),
+    db.delete(equipmentCheckouts).where(eq(equipmentCheckouts.itemId, id)),
+    db.delete(usageLogs).where(eq(usageLogs.itemId, id)),
+    db.delete(items).where(eq(items.id, id)),
+  ])
 
   await logAudit({ userId: user.id, action: 'DELETE', entityType: 'Item', entityId: id, details: { name: item.name } })
 

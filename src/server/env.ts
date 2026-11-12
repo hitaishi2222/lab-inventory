@@ -10,6 +10,7 @@
  * anything, and a snapshot taken at import time would miss it.
  */
 const bindings: Record<string, string | undefined> = {}
+const raw: Record<string, unknown> = {}
 
 export const env = new Proxy(bindings, {
   get(target, key) {
@@ -19,10 +20,19 @@ export const env = new Proxy(bindings, {
   },
 }) as Record<string, string | undefined>
 
-/** Copy Worker bindings (strings only — KV/R2/DO bindings are objects). */
+/** Copy Worker bindings. Strings join the env shim; objects are only reachable via getBinding. */
 export function setEnv(source: Record<string, unknown> | undefined): void {
   if (!source) return
   for (const [key, value] of Object.entries(source)) {
+    raw[key] = value
     if (typeof value === 'string') bindings[key] = value
   }
+}
+
+/**
+ * An object binding (D1, KV, R2, DO). Undefined on Node, where only env vars exist.
+ * Deliberately untyped: naming Worker types would drag in @cloudflare/workers-types.
+ */
+export function getBinding<T = unknown>(name: string): T | undefined {
+  return raw[name] as T | undefined
 }

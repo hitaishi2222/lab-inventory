@@ -1,5 +1,5 @@
 import app from './app'
-import { env, setEnv } from './env'
+import { env, setEnv, getBinding } from './env'
 import { ensureLabs } from './db/labs'
 
 /**
@@ -10,11 +10,12 @@ import { ensureLabs } from './db/labs'
  * scheduler, and labs.json. Everything else is the same app.
  *
  * Bindings are copied into the env shim on first use so `env.BETTER_AUTH_URL`
- * etc. read from wrangler vars/secrets exactly like they read from .env.
+ * etc. read from wrangler vars/secrets exactly like they read from .env. The D1
+ * binding is an object, so it is reached through getBinding('DB') instead.
  *
- * shortcut: no scheduled backups here — point DATABASE_URL at Turso, which
- * keeps point-in-time restore itself. Add a `scheduled` handler writing to R2
- * if you ever need self-hosted dumps on Workers.
+ * shortcut: no scheduled backups here — D1's Time Travel keeps 30 days of
+ * point-in-time restore, so add a `scheduled` handler writing to R2 only if you
+ * need dumps you own.
  */
 
 /** Placeholder shipped in wrangler.jsonc; logins fail with 403 until it changes. */
@@ -28,7 +29,10 @@ const PLACEHOLDER_AUTH_URL = 'https://labs.example.com'
 function configProblem(): string | null {
   const dbUrl = (env.DATABASE_URL ?? '').trim()
   const hasLabList = Boolean(env.LAB_DATABASES?.trim())
-  if (!hasLabList && !/^(libsql|https?|wss?):/i.test(dbUrl)) {
+  // The primary lab comes from the D1 binding when there is one (wrangler.jsonc
+  // → d1_databases); only extra labs need a remote libSQL URL.
+  const hasD1 = Boolean(getBinding('DB'))
+  if (!hasD1 && !hasLabList && !/^(libsql|https?|wss?):/i.test(dbUrl)) {
     return `DATABASE_URL must be a remote libSQL URL such as libsql://<db>-<org>.turso.io — got "${dbUrl || 'nothing'}". A Worker has no filesystem, so file: databases cannot work. Set it with: npx wrangler secret put DATABASE_URL`
   }
   const authUrl = (env.BETTER_AUTH_URL ?? '').trim()
@@ -44,6 +48,18 @@ export default {
     const problem = configProblem()
     if (problem) return new Response(`${problem}\n`, { status: 500 })
     await ensureLabs()
-    return app.fetch(request, workerEnv as never, {} as never)
+    try {
+      return await app.fetch(request, workerEnv as never, {} as never)
+    } catch (err) {
+      // A fresh D1 database has no tables. Say how to fix it instead of leaking
+      // "no such table: user" from the auth layer.
+      if (/no such table/i.test(String(err))) {
+        return new Response(
+          'This D1 database has no schema yet. Apply it from your machine: npm run db:migrate:d1\n',
+          { status: 500 },
+        )
+      }
+      throw err
+    }
   },
 }

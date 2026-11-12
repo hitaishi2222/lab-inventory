@@ -24,10 +24,12 @@
   // `file:` does not exist in a Worker, and the schema has to be created from
   // your machine first: `npm run db:migrate && npm run db:seed` with the Turso
   // values in .env (nothing migrates at runtime).
+  // Nothing per-deployment lives here: the Worker's own URL, the database and
+  // the auth secret are secrets, set once in the dashboard or with
+  // `wrangler secret put`. That way a deploy from a fork needs no edit to this
+  // file, and a fork never diverges from upstream. Until BETTER_AUTH_URL is
+  // set the Worker answers 500 with those instructions.
   "vars": {
-    // CHANGE THIS to the Worker's real URL (or set the secret instead) —
-    // logins fail with 403 INVALID_ORIGIN while the placeholder is in place.
-    "BETTER_AUTH_URL": "https://labs.example.com",
     // There is no mailer: a password-reset link is a single-use credential, so
     // it must not land in Cloudflare logs. Set to 1 only with a private log
     // sink you control, or wire a real mailer in src/server/auth.ts.

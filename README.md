@@ -1,6 +1,6 @@
 # Labs
 
-> **Alpha (0.1.0-alpha.1).** Working, self-hosted, used daily — but expect the data
+> **Beta (0.0.1-beta).** Working, self-hosted, used daily — but expect the data
 > model and API to still move between releases. [PLAN.md](PLAN.md) lists what is
 > shipped and what is planned.
 
@@ -182,16 +182,20 @@ created from your machine, not at boot.
    read `./drizzle`, so nothing is applied at runtime and a fresh database has
    no tables until this step runs.
 
-3. Edit `wrangler.jsonc`: the Worker `name` and `BETTER_AUTH_URL` (its real URL —
-   `https://<worker>.<subdomain>.workers.dev` or your domain). Until the
-   placeholder is replaced the Worker answers 500 with that instruction.
+3. Set the Worker's own public URL as a secret — its real URL, either
+   `https://<worker>.<subdomain>.workers.dev` or the custom domain. This is the
+   only value that differs per deployment, so it stays out of the repo: the
+   same commit deploys to any account unedited. Until it is set the Worker
+   answers 500 with that instruction.
 
-4. Push the values as secrets (`.env` is not read by `wrangler deploy`):
+4. Push the values as secrets (`.env` is not read by `wrangler deploy`, and
+   Dashboard → Settings → Variables and Secrets works without the CLI):
 
    ```bash
    npx wrangler secret put DATABASE_URL        # libsql://<db>-<org>.turso.io
    npx wrangler secret put DATABASE_AUTH_TOKEN
    npx wrangler secret put BETTER_AUTH_SECRET
+   npx wrangler secret put BETTER_AUTH_URL    # https://labs.yourdomain.com
    ```
 
 5. Deploy and open the URL:

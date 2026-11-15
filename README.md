@@ -218,6 +218,12 @@ the in-process backups that only exist under Docker.
 
    Sign in as `admin@lab.edu` (or `admin`) with the seed password, then change it.
 
+Deploying the same repo to a **second** Cloudflare account (another lab, or no
+terminal at all) is written up step by step in
+[docs/CLOUDFLARE-FORK.md](docs/CLOUDFLARE-FORK.md). The short version: fork,
+create a D1 database, paste its id into `wrangler.jsonc`, then set the two
+secrets — nothing else in the repo is per-deployment.
+
 `file:` databases, the `labs.json` registry and in-process backups do not exist
 in a Worker: extra labs use `LAB_DATABASES` with one remote `libsql://` URL per
 lab (Turso), and D1 is the database for the primary one. `LOG_RESET_LINKS` is

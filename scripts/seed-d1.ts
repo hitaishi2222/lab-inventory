@@ -94,7 +94,7 @@ try {
   writeFileSync(dumpFile, statements.join('\n') + '\n')
   console.log(`${statements.length} rows → ${dumpFile}`)
 
-  run('npx', ['wrangler', 'd1', 'execute', database, ...(local ? ['--local'] : ['--remote']), `--file=${dumpFile}`], process.env)
+  run('npx', ['--yes', 'wrangler@4.160.0', 'd1', 'execute', database, ...(local ? ['--local'] : ['--remote']), `--file=${dumpFile}`], process.env)
 } finally {
   // Both files hold a real password hash; the operator has the SQL output above.
   rmSync(scratch, { force: true })

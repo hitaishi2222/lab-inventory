@@ -32,9 +32,10 @@ if (existingCategories.length > 0) {
 }
 
 // --- Admin user (credentials owned by better-auth) --------------------------
-// Login: admin@lab.edu / admin123
+// Login: admin@lab.edu, password from SEED_ADMIN_PASSWORD or the one printed below.
 const ADMIN_EMAIL = 'admin@lab.edu'
-const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || crypto.randomUUID().replace(/-/g, '').slice(0, 16) + 'A1!'
+const SEED_ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD
+const ADMIN_PASSWORD = SEED_ADMIN_PASSWORD || crypto.randomUUID().replace(/-/g, '').slice(0, 16) + 'A1!'
 const existingAdmin = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).get()
 if (!existingAdmin) {
   await auth.api.signUpEmail({
@@ -48,7 +49,13 @@ if (!existingAdmin) {
     .update(users)
     .set({ name: 'Lab Admin', role: 'ADMIN', updatedAt: new Date().toISOString() })
     .where(eq(users.email, ADMIN_EMAIL))
-  console.log(`Admin user created (admin@lab.edu). Password: ${ADMIN_PASSWORD}`)
+  // A supplied password is already known to the operator; printing it would put
+  // a live credential in CI/Builds logs that outlive the run.
+  console.log(
+    SEED_ADMIN_PASSWORD
+      ? 'Admin user created (admin@lab.edu) with the SEED_ADMIN_PASSWORD you supplied.'
+      : `Admin user created (admin@lab.edu). Password: ${ADMIN_PASSWORD}`,
+  )
   console.log('Change this password immediately after first login.')
 } else {
   console.log('Admin user already exists, skipping.')

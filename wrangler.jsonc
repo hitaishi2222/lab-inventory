@@ -21,9 +21,15 @@
   "observability": { "enabled": true },
   // The primary lab's database. A Worker has no filesystem, so the `file:` lab
   // default is served from this binding (src/server/db/index.ts). Create it once
-  // with `npx wrangler d1 create lab-inventory`, paste the id it prints here, then
-  // apply the schema from your machine: `npm run db:migrate:d1`. Nothing migrates
-  // at runtime. D1 keeps 30 days of point-in-time restore (Time Travel).
+  // with `npx wrangler d1 create lab-inventory`, then apply the schema from your
+  // machine: `npm run db:migrate:d1`. Nothing migrates at runtime. D1 keeps 30
+  // days of point-in-time restore (Time Travel).
+  //
+  // Leave the id below as the placeholder and set D1_DATABASE_ID instead
+  // (Cloudflare Builds → build secret, or an env var): scripts/wrangler.ts
+  // generates a config with that id, so a fork never edits this file and
+  // upstream changes always merge cleanly. Editing the value here also works —
+  // it just makes `Sync fork` conflict whenever this file changes.
   "d1_databases": [
     {
       "binding": "DB",

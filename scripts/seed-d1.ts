@@ -6,7 +6,7 @@
 // The seed path needs a Node runtime — better-auth hashes the admin password —
 // and D1 is only reachable from Cloudflare, so this builds the database in a
 // throwaway SQLite file, dumps it as INSERTs and replays them with
-// `wrangler d1 execute`. That is Cloudflare's own documented import path, and it
+// `wrangler d1 execute` (via scripts/wrangler.ts). That is Cloudflare's own documented import path, and it
 // means the Workers deploy never grows a second seeding code path.
 //
 // Idempotent: the dump uses INSERT OR IGNORE and scripts/seed.ts skips whatever
@@ -94,7 +94,9 @@ try {
   writeFileSync(dumpFile, statements.join('\n') + '\n')
   console.log(`${statements.length} rows → ${dumpFile}`)
 
-  run('npx', ['--yes', 'wrangler@4.160.0', 'd1', 'execute', database, ...(local ? ['--local'] : ['--remote']), `--file=${dumpFile}`], process.env)
+  // Through scripts/wrangler.ts, not npx directly: the D1 id may come from
+  // D1_DATABASE_ID (a fork's build secret), and the wrapper is what applies it.
+  run('npx', ['tsx', 'scripts/wrangler.ts', 'd1', 'execute', database, ...(local ? ['--local'] : ['--remote']), `--file=${dumpFile}`], process.env)
 } finally {
   // Both files hold a real password hash; the operator has the SQL output above.
   rmSync(scratch, { force: true })

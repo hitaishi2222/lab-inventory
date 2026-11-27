@@ -12,8 +12,8 @@
     "db:migrate": "tsx src/server/db/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:setup": "npm run db:generate && npm run db:migrate && npm run db:seed",
-    "db:migrate:d1": "npx --yes wrangler@4.160.0 d1 migrations apply lab-inventory --remote",
-    "db:migrate:d1:local": "npx --yes wrangler@4.160.0 d1 migrations apply lab-inventory --local",
+    "db:migrate:d1": "tsx scripts/wrangler.ts d1 migrations apply lab-inventory --remote",
+    "db:migrate:d1:local": "tsx scripts/wrangler.ts d1 migrations apply lab-inventory --local",
     "db:seed:d1": "tsx scripts/seed-d1.ts",
     "preview": "vite preview",
     "start": "tsx src/server/index.ts",
@@ -23,10 +23,10 @@
     "build:all": "npm run build && npm run build:server",
     "docs:diagram": "node scripts/render-architecture.mjs",
     "start:prod": "node dist-server/index.js",
-    "dev:worker": "npx --yes wrangler@4.160.0 dev",
-    "deploy:worker": "npm run build && npx --yes wrangler@4.160.0 deploy",
-    "deploy:worker:init": "npm run db:migrate:d1 && npm run db:seed:d1 && npx --yes wrangler@4.160.0 deploy",
-    "deploy:worker:ci": "npm run db:migrate:d1 && npx --yes wrangler@4.160.0 deploy"
+    "dev:worker": "tsx scripts/wrangler.ts dev",
+    "deploy:worker": "npm run build && tsx scripts/wrangler.ts deploy",
+    "deploy:worker:init": "npm run db:migrate:d1 && npm run db:seed:d1 && tsx scripts/wrangler.ts deploy",
+    "deploy:worker:ci": "npm run db:migrate:d1 && tsx scripts/wrangler.ts deploy"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

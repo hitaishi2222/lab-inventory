@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { likeContains, parsePagination } from '../src/server/lib/query'
 import { maskEmail, redact } from '../src/server/lib/log'
+import { PLACEHOLDER_DATABASE_ID, withDatabaseId } from '../scripts/wrangler-config'
 
 describe('redact', () => {
   it('strips credentials from connection URLs', () => {
@@ -50,5 +51,37 @@ describe('likeContains', () => {
   it('wraps the term and caps its length', () => {
     expect(likeContains('  beaker ')).toBe('%beaker%')
     expect(likeContains('x'.repeat(500))).toBe(`%${'x'.repeat(100)}%`)
+  })
+})
+
+describe('wrangler config generation', () => {
+  const committed = `{
+  "name": "lab-inventory",
+  "d1_databases": [{ "binding": "DB", "database_name": "lab-inventory", "database_id": "${PLACEHOLDER_DATABASE_ID}" }]
+}`
+
+  it('swaps only the D1 id, leaving the rest of the committed config intact', () => {
+    const id = '11111111-2222-3333-4444-555555555555'
+    const out = withDatabaseId(committed, id)
+    expect(out).toContain(`"database_id": "${id}"`)
+    expect(out).not.toContain(PLACEHOLDER_DATABASE_ID)
+    expect(out.replace(id, PLACEHOLDER_DATABASE_ID)).toBe(committed)
+  })
+
+  it('is a no-op without a D1 id, so CI dry-runs use the committed file', () => {
+    expect(withDatabaseId(committed, undefined)).toBe(committed)
+    expect(withDatabaseId(committed, '   ')).toBe(committed)
+  })
+
+  it('only touches the first binding', () => {
+    const two = `{
+  "d1_databases": [
+    { "binding": "DB", "database_id": "${PLACEHOLDER_DATABASE_ID}" },
+    { "binding": "DB2", "database_id": "other" }
+  ]
+}`
+    const out = withDatabaseId(two, '11111111-2222-3333-4444-555555555555')
+    expect(out).toContain('"database_id": "11111111-2222-3333-4444-555555555555"')
+    expect(out).toContain('"database_id": "other"')
   })
 })

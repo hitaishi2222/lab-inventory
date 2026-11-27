@@ -4,19 +4,18 @@ A runbook for a second lab (or anyone else) that wants its own copy on its own
 Cloudflare account. It assumes the person operating it is comfortable with the
 web dashboard, **not** with git or `npx`. Path A needs no terminal at all.
 
-The repository is designed so that nothing per-deployment is committed: the
-Worker's public URL and the auth secret are secrets, the database is a D1
-binding. One value is unavoidably per-account — the D1 `database_id`, which
-Cloudflare generates in *their* account.
+Nothing per-deployment is committed: the Worker's URL, the auth secret and the
+D1 database id are all values in *their* account, set as Cloudflare build/runtime
+secrets. No file in the fork ever changes, so **Sync fork** never conflicts.
 
 ## What changes per account
 
 | Thing | Where | Per account? |
 |---|---|---|
-| `database_id` | `wrangler.jsonc` → `d1_databases[0]` | **Yes** — one line, edited on github.com |
+| `D1_DATABASE_ID` | Build secret (build-time) | **Yes** (no file) |
 | `BETTER_AUTH_URL` | Worker secret | Yes (no file) |
-| `BETTER_AUTH_SECRET` | Worker secret | Yes (no file) |
-| `SEED_ADMIN_PASSWORD` | Worker secret (only if seeding from Builds) | Yes (no file) |
+| `BETTER_AUTH_SECRET` | Worker + build secret | Yes (no file) |
+| `SEED_ADMIN_PASSWORD` | Build secret (only if seeding from Builds) | Yes (no file) |
 | Worker name `lab-inventory` | `wrangler.jsonc` | No — names are per account |
 | `LOG_RESET_LINKS=0` | `wrangler.jsonc` `vars` | No — leave it there |
 
@@ -34,10 +33,10 @@ can pull upstream changes with the **Sync fork** button.
 ### 2. Their database
 
 Cloudflare dashboard → **Storage & Databases → D1 → Create database**, name it
-`lab-inventory` (the npm scripts hardcode that name). Copy the **Database ID**.
-
-Then on github.com, in their fork: open `wrangler.jsonc` → pencil icon → replace
-the `"database_id": "00000000-…"` value → **Commit changes**.
+`lab-inventory` (the npm scripts hardcode that name). Copy the **Database ID** —
+it is entered as a build variable in step 5, not committed to the fork.
+Editing `wrangler.jsonc` in the fork also works, but then every upstream change
+to that file turns **Sync fork** into a merge.
 
 ### 3. Worker from the repo
 
@@ -61,6 +60,10 @@ step fails with a permission error. Fix it once:
 
 Worker → **Settings → Build → Build variables and secrets** (build-time only):
 
+- `D1_DATABASE_ID` — the id copied in step 2 (type **Secret**, or a plain build
+  variable; it is not a credential). Every `*:d1` and `deploy:worker*` script
+  reads it through `scripts/wrangler.ts`, which generates the config with that
+  binding, so the committed `wrangler.jsonc` keeps the placeholder.
 - `SEED_ADMIN_PASSWORD` — the admin password this lab will start with (type **Secret**)
 - `BETTER_AUTH_SECRET` — any long random string (type **Secret**)
 
@@ -105,7 +108,8 @@ Someone with Node 22+ and this checkout can do the same against their account
 (`npx wrangler login`, or `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`):
 
 ```bash
-npx --yes wrangler@4.160.0 d1 create lab-inventory   # paste the id into wrangler.jsonc
+npx --yes wrangler@4.160.0 d1 create lab-inventory   # copy the printed id
+export D1_DATABASE_ID=<that-id>                      # or edit wrangler.jsonc
 npm run deploy:worker:init                           # migrate + seed + deploy
 npx --yes wrangler@4.160.0 secret put BETTER_AUTH_URL    # https://…
 npx --yes wrangler@4.160.0 secret put BETTER_AUTH_SECRET # openssl rand -base64 32
@@ -117,8 +121,12 @@ without it the seed generates one and prints it.
 
 ## Gotchas
 
-- **The placeholder id deploys fine and binds nothing.** A fresh account must
-  replace `database_id` or every query fails at runtime.
+- **The placeholder id deploys fine and binds nothing.** A fresh account must set
+  `D1_DATABASE_ID` (or edit `database_id`) or every query fails at runtime.
+- **Updates are pull, not push.** Upstream cannot push into a fork: the owner
+  clicks **Sync fork** (or wires a sync workflow), and Cloudflare Builds deploys
+  `main` again on the resulting push. Because the fork edits no files, that sync
+  is always a fast-forward.
 - **Deploy before the schema exists?** The Worker answers `500` telling you to run
   the migration; `deploy:worker:init`/`:ci` already handle the order.
 - **A failing migration stops the deploy.** That is deliberate: no half-migrated

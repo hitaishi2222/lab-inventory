@@ -170,12 +170,19 @@ binding"), and its schema is created from your machine, not at boot. Cloudflare
 gives D1 30 days of point-in-time restore (Time Travel) for free, which replaces
 the in-process backups that only exist under Docker.
 
-1. Create the database, then paste the id it prints into `wrangler.jsonc`
-   (`d1_databases[0].database_id`):
+1. Create the database (`npx wrangler d1 create lab-inventory`) and keep the
+   id it prints: it goes into `D1_DATABASE_ID`, not into a file.
 
    ```bash
-   npx wrangler d1 create lab-inventory
+   export D1_DATABASE_ID=11111111-1111-1111-1111-111111111111
    ```
+
+   `scripts/wrangler.ts` — which every `*:d1` / `deploy:worker*` script goes
+   through — copies `wrangler.jsonc` and swaps in that id, so the committed
+   config stays identical to upstream and a fork never has to edit it. Without
+   the variable the committed file is used as-is (`CI`'s dry run relies on that).
+   On Cloudflare Builds set `D1_DATABASE_ID` as a **build** variable instead of
+   exporting it.
 
 2. Create the schema **from your machine**:
 
@@ -199,7 +206,8 @@ the in-process backups that only exist under Docker.
    local miniflare database instead, and `D1_DEBUG=1` to keep the generated SQL.
 
 4. Two secrets — the Worker's own public URL, and the auth secret. Neither is in
-   the repo: the same commit deploys to any account unedited. Until
+   the repo: the same commit deploys to any account unedited (the database id is
+   the third such value, above). Until
    `BETTER_AUTH_URL` is set the Worker answers 500 with that instruction.
 
    ```bash
@@ -222,8 +230,9 @@ the in-process backups that only exist under Docker.
 Deploying the same repo to a **second** Cloudflare account (another lab, or no
 terminal at all) is written up step by step in
 [docs/CLOUDFLARE-FORK.md](docs/CLOUDFLARE-FORK.md). The short version: fork,
-create a D1 database, paste its id into `wrangler.jsonc`, then set the two
-secrets — nothing else in the repo is per-deployment.
+create a D1 database, put its id in a `D1_DATABASE_ID` build secret, then set the
+two runtime secrets — nothing in the repo is per-deployment, so a fork never
+conflicts with upstream.
 
 `file:` databases, the `labs.json` registry and in-process backups do not exist
 in a Worker: extra labs use `LAB_DATABASES` with one remote `libsql://` URL per

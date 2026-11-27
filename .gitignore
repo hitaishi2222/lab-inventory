@@ -20,3 +20,5 @@ dist-server
 
 # wrangler scratch space (dry-run/bundling)
 .wrangler
+# generated deploy config (scripts/wrangler.mjs writes this when D1_DATABASE_ID is set)
+.wrangler.deploy.jsonc

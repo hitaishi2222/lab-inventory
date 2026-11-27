@@ -76,6 +76,8 @@ describe('drizzle migrations', () => {
         'notifications',
         'role_permissions',
         'app_settings',
+        'bills',
+        'bill_items',
         'session',
         'account',
         'verification',
@@ -93,6 +95,13 @@ describe('drizzle migrations', () => {
       ).rows[0]!.sql as string
       expect(ddl).toContain('ON DELETE set null')
       expect(ddl).not.toMatch(/`user_id` text NOT NULL/)
+
+      // 0007 must also grant the new bills permissions to existing roles — a
+      // lab migrated in place would otherwise see no Bills page at all.
+      const grant = await client.execute(
+        "SELECT count(*) AS n FROM role_permissions WHERE permission LIKE 'bills:%'",
+      )
+      expect(Number(grant.rows[0]!.n)).toBe(8)
     } finally {
       rmSync(path, { force: true })
     }

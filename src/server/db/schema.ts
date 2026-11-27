@@ -92,10 +92,43 @@ export const categories = sqliteTable('categories', {
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 })
 
+// Purchase bills. Two fixed checkpoints (received from the vendor, submitted
+// to the university) are columns rather than a join table: the workflow has
+// exactly two steps, and each stores who ticked it plus when.
+export const bills = sqliteTable('bills', {
+  id: text('id').primaryKey(),
+  billNumber: text('bill_number').notNull(),
+  vendorName: text('vendor_name').notNull(),
+  billDate: text('bill_date').notNull(),
+  amount: real('amount').notNull().default(0),
+  notes: text('notes'),
+  receivedFromVendorBy: text('received_from_vendor_by').references(() => users.id, { onDelete: 'set null' }),
+  receivedFromVendorAt: text('received_from_vendor_at'),
+  submittedToUniversityBy: text('submitted_to_university_by').references(() => users.id, { onDelete: 'set null' }),
+  submittedToUniversityAt: text('submitted_to_university_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => ({
+  billDateIdx: index('bills_bill_date_idx').on(t.billDate),
+}))
+
+// Lines printed on the bill. Separate from inventory items: a bill also lists
+// things that never enter the inventory, and one bill can cover several items.
+export const billItems = sqliteTable('bill_items', {
+  id: text('id').primaryKey(),
+  billId: text('bill_id').references(() => bills.id, { onDelete: 'cascade' }).notNull(),
+  description: text('description').notNull(),
+  quantity: real('quantity').notNull().default(1),
+  amount: real('amount').notNull().default(0),
+}, (t) => ({ billIdx: index('bill_items_bill_idx').on(t.billId) }))
+
 export const items = sqliteTable('items', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   categoryId: text('category_id').references(() => categories.id),
+  // Which purchase bill this stock came from (chemicals/consumables usually).
+  // SET NULL, not CASCADE: deleting a bill must never delete inventory.
+  billId: text('bill_id').references(() => bills.id, { onDelete: 'set null' }),
   description: text('description'),
   location: text('location'),
   quantity: real('quantity').notNull().default(0),
@@ -106,6 +139,7 @@ export const items = sqliteTable('items', {
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 }, (t) => ({
   categoryIdx: index('items_category_idx').on(t.categoryId),
+  billIdx: index('items_bill_idx').on(t.billId),
   createdAtIdx: index('items_created_at_idx').on(t.createdAt),
 }))
 

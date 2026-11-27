@@ -30,6 +30,8 @@ export type Permission =
   | 'audit:view'
   | 'users:manage'
   | 'categories:manage'
+  | 'bills:view'
+  | 'bills:manage'
   | 'export:data'
   | 'permissions:manage'
   | 'settings:manage'

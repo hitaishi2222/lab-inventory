@@ -17,6 +17,7 @@ import Notifications from './pages/Notifications'
 import Audit from './pages/Audit'
 import Users from './pages/Users'
 import Categories from './pages/Categories'
+import Bills from './pages/Bills'
 import Settings from './pages/Settings'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
@@ -52,6 +53,8 @@ function page(
     | 'audit:view'
     | 'users:manage'
     | 'categories:manage'
+    | 'bills:view'
+    | 'bills:manage'
     | 'export:data'
     | 'permissions:manage'
     | 'labs:manage'
@@ -81,6 +84,7 @@ function App() {
               path="/inventory/:id"
               element={page('Item details', <ItemDetail />, ['inventory:view'])}
             />
+            <Route path="/bills" element={page('Bills', <Bills />, ['bills:view'])} />
             <Route
               path="/equipment"
               element={page('Equipment', <Equipment />, ['inventory:view'])}

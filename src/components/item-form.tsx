@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Category, Item } from '@/hooks/queries'
+import { useBills, type Category, type Item } from '@/hooks/queries'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,6 +17,7 @@ const EQUIPMENT_STATUSES = ['AVAILABLE', 'CHECKED_OUT', 'MAINTENANCE']
 export interface ItemFormValues {
   name: string
   categoryId: string
+  billId: string
   description: string
   location: string
   quantity: number
@@ -30,6 +31,7 @@ export function emptyValues(): ItemFormValues {
   return {
     name: '',
     categoryId: '',
+    billId: '',
     description: '',
     location: '',
     quantity: 0,
@@ -44,6 +46,7 @@ export function valuesFromItem(item: Item): ItemFormValues {
   const v = emptyValues()
   v.name = item.name
   v.categoryId = item.categoryId || ''
+  v.billId = item.billId || ''
   v.description = item.description || ''
   v.location = item.location || ''
   v.quantity = item.quantity
@@ -76,6 +79,8 @@ export function payloadFromValues(v: ItemFormValues, categoryName: string | unde
   const payload: Record<string, unknown> = {
     name: v.name,
     categoryId: v.categoryId,
+    // null, not undefined: an edit must be able to clear the link.
+    billId: v.billId || null,
     description: v.description || undefined,
     location: v.location || undefined,
     quantity: Number(v.quantity),
@@ -101,6 +106,7 @@ export function ItemForm({
   onSubmit: (v: ItemFormValues) => void
 }) {
   const [v, setV] = useState<ItemFormValues>(initial)
+  const { data: bills } = useBills()
 
   const set = (key: keyof ItemFormValues, value: string | number) =>
     setV((prev) => ({ ...prev, [key]: value }))
@@ -138,6 +144,25 @@ export function ItemForm({
         <div className="space-y-2">
           <Label htmlFor="location">Storage location</Label>
           <Input id="location" value={v.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. Bench A-1" />
+        </div>
+        <div className="space-y-2">
+          <Label>Purchase bill</Label>
+          <Select
+            value={v.billId || 'none'}
+            onValueChange={(val) => set('billId', val === 'none' ? '' : val)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Not linked" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Not linked</SelectItem>
+              {(bills || []).map((b) => (
+                <SelectItem key={b.id} value={b.id}>
+                  {b.vendorName} · {b.billNumber}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-2">
           <Label htmlFor="description">Description</Label>

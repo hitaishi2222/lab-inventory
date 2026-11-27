@@ -177,6 +177,16 @@ export default function ItemDetail() {
             <Field label="Quantity" value={`${item.quantity} ${item.unit}`} />
             <Field label="Low-stock threshold" value={`${item.minStockThreshold} ${item.unit}`} />
             <Field label="Description" value={item.description} />
+            <Field
+              label="Purchase bill"
+              value={
+                item.bill ? (
+                  <Link to="/bills" className="text-primary hover:underline">
+                    {item.bill.vendorName} · {item.bill.billNumber}
+                  </Link>
+                ) : null
+              }
+            />
             <Field label="Last updated" value={formatDateTime(item.updatedAt)} />
           </dl>
         </CardContent>

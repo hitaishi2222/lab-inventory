@@ -13,6 +13,7 @@ import { usageRouter } from './routes/usage'
 import { notificationsRouter } from './routes/notifications'
 import { auditRouter } from './routes/audit'
 import { categoriesRouter } from './routes/categories'
+import { billsRouter } from './routes/bills'
 import { usersRouter } from './routes/users'
 import { dashboardRouter } from './routes/dashboard'
 import { rolePermissionsRouter } from './routes/role-permissions'
@@ -158,6 +159,7 @@ app.route('/api/usage', usageRouter)
 app.route('/api/notifications', notificationsRouter)
 app.route('/api/audit', auditRouter)
 app.route('/api/categories', categoriesRouter)
+app.route('/api/bills', billsRouter)
 app.route('/api/users', usersRouter)
 app.route('/api/dashboard', dashboardRouter)
 app.route('/api/role-permissions', rolePermissionsRouter)

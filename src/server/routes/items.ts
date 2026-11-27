@@ -4,6 +4,7 @@ import { eq, desc, like, or, sql, inArray, count } from 'drizzle-orm'
 import { db, atomic } from '../db'
 import {
   items,
+  bills,
   chemicalDetails,
   equipmentDetails,
   equipmentCheckouts,
@@ -81,8 +82,15 @@ itemsRouter.get('/:id', requireAuth, async (c) => {
 
   const chemical = await db.select().from(chemicalDetails).where(eq(chemicalDetails.itemId, id)).get()
   const equipment = await db.select().from(equipmentDetails).where(eq(equipmentDetails.itemId, id)).get()
+  const bill = item.billId
+    ? await db
+        .select({ id: bills.id, billNumber: bills.billNumber, vendorName: bills.vendorName, billDate: bills.billDate })
+        .from(bills)
+        .where(eq(bills.id, item.billId))
+        .get()
+    : undefined
 
-  return c.json({ ...item, chemical, equipment })
+  return c.json({ ...item, chemical, equipment, bill: bill ?? null })
 })
 
 // POST /api/items - Create new item
@@ -100,6 +108,7 @@ itemsRouter.post(
     quantity: z.number().min(0).default(0),
     unit: z.string().max(50).default('pieces'),
     minStockThreshold: z.number().min(0).default(0),
+    billId: z.string().nullable().optional(),
     chemical: z.object({
       casNumber: z.string().optional(),
       hazardClass: z.string().optional(),
@@ -121,6 +130,13 @@ itemsRouter.post(
   const id = crypto.randomUUID()
   const user = c.get('user') as { id: string }
 
+  // An unknown bill id would fail the FK insert halfway through the batch, so
+  // reject it before anything is written.
+  if (parsed.data.billId) {
+    const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.id, parsed.data.billId)).get()
+    if (!bill) return c.json({ error: 'Bill not found' }, 400)
+  }
+
   // One batch: an item plus its chemical/equipment detail rows are a single
   // logical record. A failure halfway through used to leave an item with no
   // details (or details pointing at nothing).
@@ -134,6 +150,7 @@ itemsRouter.post(
       quantity: parsed.data.quantity,
       unit: parsed.data.unit,
       minStockThreshold: parsed.data.minStockThreshold,
+      billId: parsed.data.billId ?? null,
     }),
 
     ...(parsed.data.chemical
@@ -168,6 +185,7 @@ itemsRouter.put(
     quantity: z.number().optional(),
     unit: z.string().optional(),
     minStockThreshold: z.number().optional(),
+    billId: z.string().nullable().optional(),
     imageUrl: z.string().url().refine((u) => /^https?:\/\//i.test(u), 'URL must be http(s)').optional(),
   })
   const chemicalSchema = z.object({
@@ -205,6 +223,12 @@ itemsRouter.put(
   const base = baseParsed.data
   const chemical = parsed.data.chemical
   const equipment = parsed.data.equipment
+
+  // A stale bill id from an open form would fail the FK write; say so instead.
+  if (base.billId) {
+    const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.id, base.billId)).get()
+    if (!bill) return c.json({ error: 'Bill not found' }, 400)
+  }
 
   // Item + details move together, so a failed detail write cannot leave the
   // row half-updated. item_id is unique on both detail tables, so an upsert

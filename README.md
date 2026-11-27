@@ -39,6 +39,7 @@ npm run docs:diagram
 | **Chemicals** | CAS number, molecular formula, GHS hazard class and pictogram codes, expiry date, storage conditions, SDS link. Chemicals that expire within the next 60 days surface on the dashboard. |
 | **Equipment** | Serial number, condition and purchase date. Check out with an expected return date, return it, see overdue items, and reserve an instrument for a future slot. |
 | **Usage** | Log consumption against an item with a note. The quantity drops, and the entry stays in the item's usage history. |
+| **Bills** | Track purchase bills: bill number, vendor, date, amount, free-text details and the lines the vendor printed. Two tick boxes record who received it from the vendor and who submitted it to the university, and inventory items added with a bill selected appear on that bill. |
 | **Roles** | Six roles: Admin, Supervisor, PostDoc, PhD, Project Research Fellow, Others. Each role's permission set is stored in the database and edited on the Permissions page. Accounts are created by an Admin or Supervisor; public sign-up is closed. |
 | **Notifications** | Low stock, expiring chemicals and overdue equipment. Generate them on a schedule or on demand. |
 | **Audit log** | Every create, update, delete, checkout, return and login, with actor, entity, timestamp and IP. Paged, with a CSV export. |

@@ -31,6 +31,8 @@ export type Permission =
   | 'audit:view'
   | 'users:manage'
   | 'categories:manage'
+  | 'bills:view'
+  | 'bills:manage'
   | 'export:data'
   | 'permissions:manage'
   | 'settings:manage'
@@ -48,6 +50,8 @@ export const ALL_PERMISSIONS: Permission[] = [
   'audit:view',
   'users:manage',
   'categories:manage',
+  'bills:view',
+  'bills:manage',
   'export:data',
   'permissions:manage',
   'settings:manage',
@@ -68,6 +72,8 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permission[]> = {
     'usage:log',
     'notifications:view',
     'categories:manage',
+    'bills:view',
+    'bills:manage',
     'export:data',
     'settings:manage',
   ],
@@ -79,6 +85,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permission[]> = {
     'equipment:return',
     'usage:log',
     'notifications:view',
+    'bills:view',
   ],
   PHD: [
     'inventory:view',
@@ -87,6 +94,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permission[]> = {
     'equipment:return',
     'usage:log',
     'notifications:view',
+    'bills:view',
   ],
   PROJECT_RESEARCH_FELLOW: [
     'inventory:view',
@@ -94,8 +102,9 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permission[]> = {
     'equipment:return',
     'usage:log',
     'notifications:view',
+    'bills:view',
   ],
-  OTHERS: ['inventory:view', 'notifications:view'],
+  OTHERS: ['inventory:view', 'notifications:view', 'bills:view'],
 }
 
 /** Seed default permissions, adding any missing ones for each role. */

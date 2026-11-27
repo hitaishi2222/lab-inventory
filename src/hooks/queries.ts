@@ -37,6 +37,7 @@ export interface Item {
   id: string
   name: string
   categoryId: string | null
+  billId?: string | null
   description: string | null
   location: string | null
   quantity: number
@@ -47,6 +48,7 @@ export interface Item {
   updatedAt: string
   chemical?: ChemicalDetails | null
   equipment?: EquipmentDetails | null
+  bill?: { id: string; billNumber: string; vendorName: string; billDate: string } | null
 }
 
 export interface Checkout {
@@ -137,6 +139,116 @@ export function useDeleteCategory() {
   const invalidate = useInvalidateCategories()
   return useMutation({
     mutationFn: (id: string) => api(`/api/categories/${id}`, { method: 'DELETE' }),
+    onSuccess: invalidate,
+  })
+}
+
+// --- Bills (purchase tracking) ---------------------------------------------------
+
+export interface BillItem {
+  id: string
+  billId: string
+  description: string
+  quantity: number
+  amount: number
+}
+
+export interface Bill {
+  id: string
+  billNumber: string
+  vendorName: string
+  billDate: string
+  amount: number
+  notes: string | null
+  receivedFromVendorBy: string | null
+  receivedFromVendorAt: string | null
+  submittedToUniversityBy: string | null
+  submittedToUniversityAt: string | null
+  createdAt: string
+  updatedAt: string
+  receivedFromVendorByName: string | null
+  submittedToUniversityByName: string | null
+}
+
+export interface BillDetail extends Bill {
+  items: BillItem[]
+  inventoryItems: { id: string; name: string; categoryId: string | null; quantity: number; unit: string }[]
+}
+
+export type BillPayload = {
+  billNumber: string
+  vendorName: string
+  billDate: string
+  amount: number
+  notes?: string
+  items: { description: string; quantity: number; amount: number }[]
+}
+
+export function useBills() {
+  return useQuery({
+    queryKey: ['bills'],
+    queryFn: () => api<{ bills: Bill[] }>('/api/bills').then((r) => r.bills),
+  })
+}
+
+export function useBill(id: string | null | undefined) {
+  return useQuery({
+    queryKey: ['bills', id],
+    queryFn: () => api<BillDetail>(`/api/bills/${id}`),
+    enabled: !!id,
+  })
+}
+
+function useInvalidateBills() {
+  const qc = useQueryClient()
+  return () => {
+    qc.invalidateQueries({ queryKey: ['bills'] })
+    qc.invalidateQueries({ queryKey: ['items'] })
+  }
+}
+
+export function useCreateBill() {
+  const invalidate = useInvalidateBills()
+  return useMutation({
+    mutationFn: (body: BillPayload) =>
+      api<{ id: string }>('/api/bills', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateBill() {
+  const invalidate = useInvalidateBills()
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & BillPayload) =>
+      api(`/api/bills/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteBill() {
+  const invalidate = useInvalidateBills()
+  return useMutation({
+    mutationFn: (id: string) => api(`/api/bills/${id}`, { method: 'DELETE' }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useTickBill() {
+  const invalidate = useInvalidateBills()
+  return useMutation({
+    mutationFn: ({
+      id,
+      checkpoint,
+      ticked,
+    }: {
+      id: string
+      checkpoint: 'RECEIVED' | 'SUBMITTED'
+      ticked: boolean
+    }) =>
+      api(`/api/bills/${id}/tick`, {
+        method: 'POST',
+        body: JSON.stringify({ checkpoint, ticked }),
+      }),
     onSuccess: invalidate,
   })
 }

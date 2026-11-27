@@ -323,3 +323,94 @@ describe('user lifecycle', () => {
     expect((await call('DELETE', `/api/items/${itemId}`)).status).toBe(200)
   })
 })
+
+describe('bills', () => {
+  it('links inventory items to a bill and records who ticked it', async () => {
+    const created = await call('POST', '/api/bills', {
+      billNumber: 'INV-77',
+      vendorName: 'Sigma Aldrich',
+      billDate: '2025-01-15',
+      amount: 500,
+      notes: 'solvent restock',
+      items: [{ description: 'Acetone, HPLC grade', quantity: 2, amount: 400 }],
+    })
+    expect(created.status, created.text).toBe(201)
+    const billId = created.json.id as string
+
+    const itemId = await createItem({ name: 'Billed Acetone', billId })
+
+    const detail = await call('GET', `/api/bills/${billId}`)
+    expect(detail.status, detail.text).toBe(200)
+    expect(detail.json.items).toHaveLength(1)
+    expect(detail.json.inventoryItems.map((i: { id: string }) => i.id)).toContain(itemId)
+
+    const ticked = await call('POST', `/api/bills/${billId}/tick`, {
+      checkpoint: 'RECEIVED',
+      ticked: true,
+    })
+    expect(ticked.status, ticked.text).toBe(200)
+    const afterTick = await call('GET', `/api/bills/${billId}`)
+    expect(afterTick.json.receivedFromVendorByName).toBe(ADMIN.name)
+    expect(afterTick.json.receivedFromVendorAt).toBeTruthy()
+    expect(afterTick.json.submittedToUniversityAt).toBeNull()
+
+    // The item detail shows which bill it came from.
+    const item = await call('GET', `/api/items/${itemId}`)
+    expect(item.json.bill).toMatchObject({ id: billId, billNumber: 'INV-77' })
+
+    // Deleting the bill keeps the inventory item and only drops the link.
+    expect((await call('DELETE', `/api/bills/${billId}`)).status).toBe(200)
+    const orphan = await call('GET', `/api/items/${itemId}`)
+    expect(orphan.status).toBe(200)
+    expect(orphan.json.billId).toBeNull()
+    expect(orphan.json.bill).toBeNull()
+  })
+
+  it('rejects a bill id that does not exist', async () => {
+    const res = await call('POST', '/api/items', {
+      name: 'Ghost Bill Item',
+      categoryId: await categoryId(),
+      billId: 'no-such-bill',
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('lets a viewer read bills but not create them', async () => {
+    const created = await call('POST', '/api/bills', {
+      billNumber: 'INV-88',
+      vendorName: 'Fisher',
+      billDate: '2025-02-01',
+      amount: 90,
+      items: [],
+    })
+    expect(created.status, created.text).toBe(201)
+
+    const viewer = { email: 'bills-phd@test.local', password: 'BillsPhd123!', name: 'Bills PhD' }
+    await createUser({ ...viewer, username: 'billsphd', role: 'PHD' })
+    const jar: Jar = { cookie: '' }
+    expect((await signIn(viewer.email, viewer.password, jar)).status).toBe(200)
+
+    // The admin ticks it; the viewer must see who did it, read-only.
+    expect((await call('POST', `/api/bills/${created.json.id}/tick`, {
+      checkpoint: 'SUBMITTED',
+      ticked: true,
+    })).status).toBe(200)
+
+    expect((await call('GET', '/api/bills', undefined, jar)).status).toBe(200)
+    const seenByViewer = await call('GET', `/api/bills/${created.json.id}`, undefined, jar)
+    expect(seenByViewer.status).toBe(200)
+    expect(seenByViewer.json.submittedToUniversityByName).toBe(ADMIN.name)
+    expect(seenByViewer.json.submittedToUniversityAt).toBeTruthy()
+    expect((await call('POST', '/api/bills', {
+      billNumber: 'INV-99',
+      vendorName: 'Nope',
+      billDate: '2025-02-02',
+      amount: 1,
+      items: [],
+    }, jar)).status).toBe(403)
+    expect((await call('POST', `/api/bills/${created.json.id}/tick`, {
+      checkpoint: 'RECEIVED',
+      ticked: true,
+    }, jar)).status).toBe(403)
+  })
+})

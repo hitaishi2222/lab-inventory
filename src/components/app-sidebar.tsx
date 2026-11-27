@@ -2,6 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboardIcon,
   BoxesIcon,
+  ReceiptIcon,
   MicroscopeIcon,
   ClipboardListIcon,
   BellIcon,
@@ -31,6 +32,7 @@ import {
 const mainNav = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboardIcon, end: true },
   { title: 'Inventory', url: '/inventory', icon: BoxesIcon },
+  { title: 'Bills', url: '/bills', icon: ReceiptIcon },
   { title: 'Equipment', url: '/equipment', icon: MicroscopeIcon },
   { title: 'Usage Log', url: '/usage', icon: ClipboardListIcon },
   { title: 'Notifications', url: '/notifications', icon: BellIcon },

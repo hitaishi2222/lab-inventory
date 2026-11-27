@@ -50,6 +50,13 @@
       "when": 1792400000000,
       "tag": "0006_user_fk_set_null",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1795750947045,
+      "tag": "0007_bills",
+      "breakpoints": true
     }
   ]
 }

@@ -26,6 +26,8 @@ const PERMISSION_LABELS: Record<Permission, string> = {
   'audit:view': 'View audit log',
   'users:manage': 'Manage users',
   'categories:manage': 'Manage categories',
+  'bills:view': 'View purchase bills',
+  'bills:manage': 'Add, edit, delete and tick bills',
   'export:data': 'Export data',
   'permissions:manage': 'Manage role permissions',
   'settings:manage': 'Manage settings',
